@@ -1,0 +1,8 @@
+{
+  "sql": "SELECT * FROM 'dhara/+/telemetry'",
+  "description": "Forward DHARA probe readings to the DHARA ingest API (device token validated by DHARA)",
+  "awsIotSqlVersion": "2016-03-23",
+  "ruleDisabled": false,
+  "actions": [{"http": {"url": "https://DHARA_HOST/api/sensors/ingest/",
+                         "headers": [{"key": "Content-Type", "value": "application/json"}]}}]
+}

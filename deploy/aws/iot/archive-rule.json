@@ -1,0 +1,9 @@
+{
+  "sql": "SELECT readings, topic(2) AS thing_name, timestamp() AS received_ms FROM 'dhara/+/telemetry'",
+  "description": "Archive raw DHARA probe readings to S3 (device token deliberately excluded)",
+  "awsIotSqlVersion": "2016-03-23",
+  "ruleDisabled": false,
+  "actions": [{"s3": {"roleArn": "arn:aws:iam::ACCOUNT_ID:role/dhara-iot-s3-archive",
+                       "bucketName": "BUCKET",
+                       "key": "dhara/iot-raw/${topic(2)}/${parse_time('yyyy/MM/dd', timestamp())}/${newuuid()}.json"}}]
+}

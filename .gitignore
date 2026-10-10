@@ -9,3 +9,8 @@ db.sqlite3
 debug.log
 /demo_files/
 /.playwright-mcp/
+firmware/**/secrets.h
+deploy/aws/iot/*.pem
+deploy/aws/iot/*.crt
+deploy/aws/iot/*.key
+deploy/aws/iot/cert.arn
