@@ -6,6 +6,8 @@ DHARA helps hostels, schools and campuses keep water-storage maintenance records
 
 > **Status:** hackathon prototype (Environmental Hacks 2026, Heat & Water track). The features below marked ✅ are implemented and covered by automated tests in this repository. Live AWS deployment has **not** been verified yet; see [AWS integration](#aws-integration).
 
+**New: Tank Test Priority.** Summer heat speeds up the loss of chlorine residual in stored water ([*Water Research* 2024 review](https://doi.org/10.1016/j.watres.2024.121913)), and exposed rooftop tanks heat up most. DHARA records real field readings (tank-water temperature, free chlorine) and combines how old they are with the campus weather forecast. It then tells staff **which tank to measure or review next**, with every rule that fired shown in plain words. It ranks *measurement work*; it does not predict chlorine levels or declare water safe.
+
 ---
 
 ## Contents
@@ -56,8 +58,46 @@ There is no blended "safety score". A missing report is shown as **"No water-qua
 | ✅ | **Private file serving**: evidence and reports only through access-checked views (local) or 5-minute presigned URLs (S3) |
 | ✅ | **Per-institution roles** (warden / technician) and invitation links |
 | ✅ | **Storage switch**: local disk or private Amazon S3 bucket (django-storages + boto3), tested against mocked S3 |
+| ✅ | **Field measurements**: tank-water temperature and free chlorine with measured-at vs entered-at time, method (thermometer/probe, DPD strip/comparator/photometer), entered-by, °F→°C and ppm→mg/L conversion, plausibility ranges (form + DB constraint), audited. Kept separate from lab reports |
+| ✅ | **Tank thermal profile**: placement (rooftop, elevated, ground, underground, indoor), sun exposure, material |
+| ✅ | **Weather context**: Open-Meteo daily max **air** temperature for the campus location in `TIME_ZONE`, cached for 1 h. It never raises: failures fall back to ranking without weather. Never shown or stored as tank-water temperature |
+| ✅ | **Tank Test Priority**: transparent rule engine (`qr_app/priority.py`) ranks tanks for *warden review*, *repeat measurement* or *scheduled test* using configured thresholds, reading age and heat context; each actionable result opens one follow-up per tank (DB-enforced), with the rule reasons in the audit log |
+| 🔜 | Chlorine-decay projection (deliberately not shipped: would need per-site calibration data and validation above 28 °C) |
+| 🔜 | Outbreak Radar: tank→block mapping with anonymous symptom counts (future work; needs privacy design and health-authority input) |
 | 🔜 | Live S3 + RDS deployment on AWS (code and instructions ready; not yet run against a real account) |
 | 🔜 | Email/SMS reminders, Hindi UI translation, CSV/PDF audit export, S3 Object Lock retention |
+
+## Tank Test Priority
+
+**Rules** (in order; the first chlorine rule that matches wins). Thresholds come from environment variables and are shown on the page.
+
+| # | Condition | Result |
+|---|---|---|
+| 1 | No free-chlorine reading on record | **Scheduled test**: *medium*, or *high* with heat context |
+| 2 | Latest reading older than `CHLORINE_MAX_AGE_HOURS` (72 h) | **Scheduled test**: *medium*, or *high* with heat. A stale low reading triggers a re-test, never an alarm |
+| 3 | Fresh reading **below** `CHLORINE_MIN_MG_L` (0.2) | **Warden review**: *urgent*, confirm with a repeat measurement |
+| 4 | Fresh reading above `CHLORINE_MAX_MG_L` (1.0) | **Warden review**: *medium* |
+| 5 | Fresh reading within `CHLORINE_NEAR_MARGIN_MG_L` (0.1) of the minimum | **Repeat measurement**: *medium*, or *high* with heat |
+| 6 | Heat context and the reading is older than `WARM_RETEST_HOURS` (24 h) | **Repeat measurement**: *medium* |
+| 7 | Sun-exposed tank, hot forecast, no recent water-temperature reading | **Scheduled test** (temperature): *low* |
+| – | Placement or sun exposure unknown | Informational only, no follow-up |
+
+**Heat context** means the forecast max air temperature is ≥ `FORECAST_HOT_C` (35 °C), or a fresh tank-water reading is ≥ `WATER_WARM_C` (25 °C). Heat only raises urgency; it never creates a "below threshold" finding by itself.
+
+**Boundaries:**
+- *below* is strict (`<`): exactly 0.2 mg/L is not below the minimum;
+- *fresh* is inclusive (`≤ 72 h`);
+- *warm* and *hot* are inclusive (`≥`).
+
+All of these are unit-tested.
+
+**Default thresholds.** Chlorine defaults follow IS 10500:2012: free residual chlorine minimum 0.2 mg/L at the consumer end (0.5 mg/L where viral protection is needed), permissible 1.0 mg/L. The temperature defaults are policy choices. Every value can be changed.
+
+**What it does not do:**
+- It does not project chlorine decay.
+- It does not claim that a chlorine reading proves potability.
+- It does not attribute illness.
+- It does not tell anyone to chlorinate or isolate a tank. A warden decides and records the action through the follow-up workflow.
 
 ## Workflow
 
@@ -232,6 +272,8 @@ See `.env.example`. Variables read by the app:
 | `STORAGE_BACKEND` | `local` | `local` or `s3` |
 | `AWS_STORAGE_BUCKET_NAME`, `AWS_REGION`, `AWS_S3_PREFIX` | –, `ap-south-1`, `dhara` | S3 settings |
 | `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS` | `True`, `0` | Production HTTPS policy |
+| `PRIORITY_*` | see `.env.example` | Tank Test Priority thresholds |
+| `OPEN_METEO_URL`, `OPEN_METEO_TIMEOUT` | Open-Meteo API, `5` s | Weather forecast source |
 | `BILLING_ENABLED` | `False` | Re-enables upstream QRInvent YooKassa billing. Leave off for DHARA |
 | `LOG_LEVEL` | `INFO` | Console logging |
 
@@ -240,7 +282,7 @@ See `.env.example`. Variables read by the app:
 ```bash
 python manage.py makemigrations --check   # no pending model changes
 python manage.py migrate
-python manage.py test qr_app              # 35 tests; LiveS3Tests skipped without a bucket
+python manage.py test qr_app              # 60 tests; LiveS3Tests skipped without a bucket
 ```
 The suite covers:
 - tank creation and validation, QR token resolution
@@ -294,7 +336,8 @@ Static files are served by WhiteNoise. Don't use SQLite or local media storage o
 6. **Warden:** Link water-quality report → upload the SAMPLE PDF. The public page now shows the lab and sample date as *Uploaded, not yet reviewed*. Maintenance status is unchanged.
 7. **Follow-ups:** assign one, then resolve it with notes ("Cleaned, event #1 accepted").
 8. **Activity:** the full trail with SHA-256 digests. On the event page, "Re-check digest" verifies the stored file.
-9. **AWS:** run with `STORAGE_BACKEND=s3`, upload evidence and show the private object and presigned URL. This needs a real bucket.
+9. **Test priority (real readings only):** open *Test priority*. With no readings, both tanks show "No free-chlorine reading on record" and get one follow-up each. Take a **real** DPD strip and thermometer reading at an actual tank (yours or a hostel's) and enter it under *Record measurement*. The ranking updates and shows the rule that fired. The weather panel shows the live Open-Meteo forecast for the campus location (`seed_demo --lat/--lon`). If the real forecast is below 35 °C, heat context honestly stays off. To show the heat rule, change `PRIORITY_FORECAST_HOT_C` and say on camera that it is a policy setting.
+10. **AWS:** run with `STORAGE_BACKEND=s3`, upload evidence and show the private object and presigned URL. This needs a real bucket.
 
 ## Impact metrics to measure
 
@@ -320,6 +363,9 @@ Water-quality outcomes need proper testing and a separate evaluation.
 - The audit log, timestamps and digests aid traceability. They are not proof against administrator-level tampering.
 - Schedule intervals are whatever the institution configures. DHARA encodes no legal standard.
 - Rule-based follow-ups are generated when the overview or follow-up page loads. There is no background scheduler or notifications yet.
+- Test Priority uses the readings people enter. It cannot detect a falsified reading, and DPD strips have limited precision.
+- The thermal profile is descriptive context. DHARA does not estimate tank-water temperature from air temperature.
+- Weather comes from a third-party forecast (Open-Meteo) and is shown only as air-temperature context.
 - No email delivery: invitations are links the warden shares by hand.
 - The Tailwind CDN build is fine for the prototype; for production, compile the CSS.
 - The upstream billing templates (YooKassa) are still in Russian and only reachable with `BILLING_ENABLED=True`.
@@ -327,9 +373,11 @@ Water-quality outcomes need proper testing and a separate evaluation.
 ## Roadmap
 
 1. Live AWS deployment (App Runner + RDS + S3) and the live S3 test in CI.
-2. Pilot with one consenting institution. Measure the metrics above against its current process.
-3. Scheduled reminders, CSV/PDF export of a tank's history, Hindi interface.
-4. Stronger integrity: S3 versioning plus Object Lock for evidence, and periodic export of audit digests.
+2. Field pilot for Test Priority: collect paired temperature and chlorine readings across summer to learn whether a per-site chlorine-decay estimate is justified, before shipping any projection.
+3. **Outbreak Radar** (future): map tanks to hostel blocks and watch anonymous daily GI case counts. This needs a privacy review, an institutional ethics process and health-authority involvement before any build.
+4. Pilot with one consenting institution. Measure the metrics above against its current process.
+5. Scheduled reminders, CSV/PDF export of a tank's history, Hindi interface.
+6. Stronger integrity: S3 versioning plus Object Lock for evidence, and periodic export of audit digests.
 
 ## Attribution and license
 
@@ -364,4 +412,8 @@ DHARA is built on **[QRInvent](LICENSE)**, a Django QR equipment-maintenance sta
 ## References
 
 - National Health Mission, *Kayakalp Implementation Guidebook*: tank-cleaning record guidance for healthcare facilities. It does not apply to every hostel or school by default. [PDF](https://nhm.gov.in/images/pdf/in-focus/Implementation_Guidebook_for_Kayakalp.pdf)
+- BIS, *IS 10500:2012 Drinking Water Specification*: free residual chlorine. [PDF](https://consumerhelpline.gov.in/public/assets/docs/bis/IS10500-2012.pdf)
+- Furst, Graham, Weisman & Adusei, "It's getting hot in here: effects of heat on temperature, disinfection and opportunistic pathogens in drinking water distribution systems", *Water Research* 2024. [DOI](https://doi.org/10.1016/j.watres.2024.121913)
+- Fisher et al., temperature-dependent chlorine bulk decay model (validated 3.5–28 °C), *Water Research* 2012. [DOI](https://doi.org/10.1016/j.watres.2012.03.017)
+- Kagan et al., *People's Water Data* (IIT Madras), arXiv 2604.04240 (2026): notes free chlorine and water temperature were not available as predictors. [arXiv](https://arxiv.org/abs/2604.04240)
 - Amazon S3 docs: [object integrity](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html) · [Versioning](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html) · [Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html)

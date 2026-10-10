@@ -175,9 +175,11 @@ def env_float(name, default):
 # Tank Test Priority thresholds. These are institution policy choices, not safety standards:
 # DHARA flags tanks for measurement or human review; it never declares water safe.
 DHARA_PRIORITY = {
-    'CHLORINE_MIN_MG_L': env_float('PRIORITY_CHLORINE_MIN_MG_L', 0.2),      # IS 10500 minimum free residual
+    # IS 10500:2012 free residual chlorine: minimum 0.2 mg/L at the consumer end (0.5 where viral
+    # protection is required); 1.0 mg/L permissible limit.
+    'CHLORINE_MIN_MG_L': env_float('PRIORITY_CHLORINE_MIN_MG_L', 0.2),
     'CHLORINE_NEAR_MARGIN_MG_L': env_float('PRIORITY_CHLORINE_NEAR_MARGIN_MG_L', 0.1),
-    'CHLORINE_MAX_MG_L': env_float('PRIORITY_CHLORINE_MAX_MG_L', 4.0),
+    'CHLORINE_MAX_MG_L': env_float('PRIORITY_CHLORINE_MAX_MG_L', 1.0),
     'WATER_WARM_C': env_float('PRIORITY_WATER_WARM_C', 25.0),
     'FORECAST_HOT_C': env_float('PRIORITY_FORECAST_HOT_C', 35.0),
     'CHLORINE_MAX_AGE_HOURS': env_float('PRIORITY_CHLORINE_MAX_AGE_HOURS', 72),
