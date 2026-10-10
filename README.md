@@ -6,7 +6,9 @@ DHARA helps hostels, schools and campuses keep water-storage maintenance records
 
 > **Status:** hackathon prototype (Environmental Hacks 2026, Heat & Water track). The features below marked ✅ are implemented and covered by automated tests in this repository. Live AWS deployment has **not** been verified yet; see [AWS integration](#aws-integration).
 
-**New: Tank Test Priority.** Summer heat speeds up the loss of chlorine residual in stored water ([*Water Research* 2024 review](https://doi.org/10.1016/j.watres.2024.121913)), and exposed rooftop tanks heat up most. DHARA records real field readings (tank-water temperature, free chlorine) and combines how old they are with the campus weather forecast. It then tells staff **which tank to measure or review next**, with every rule that fired shown in plain words. It ranks *measurement work*; it does not predict chlorine levels or declare water safe.
+**New: thermal twin and measured cooling.** A ₹500 in-tank probe (ESP32 + DS18B20) streams tank-water temperature through **AWS IoT Core**. DHARA fits a transparent heat-balance model per tank, validates it on held-out data before showing any forecast, and measures, rather than assumes, whether a cooling intervention (reflective paint, shade, insulation) lowered the tank's daily peak.
+
+**Tank Test Priority.** Summer heat speeds up the loss of chlorine residual in stored water ([*Water Research* 2024 review](https://doi.org/10.1016/j.watres.2024.121913)), and exposed rooftop tanks heat up most. DHARA records real field readings (tank-water temperature, free chlorine) and combines how old they are with the campus weather forecast. It then tells staff **which tank to measure or review next**, with every rule that fired shown in plain words. It ranks *measurement work*; it does not predict chlorine levels or declare water safe.
 
 ---
 
@@ -62,10 +64,44 @@ There is no blended "safety score". A missing report is shown as **"No water-qua
 | ✅ | **Tank thermal profile**: placement (rooftop, elevated, ground, underground, indoor), sun exposure, material |
 | ✅ | **Weather context**: Open-Meteo daily max **air** temperature for the campus location in `TIME_ZONE`, cached for 1 h. It never raises: failures fall back to ranking without weather. Never shown or stored as tank-water temperature |
 | ✅ | **Tank Test Priority**: transparent rule engine (`qr_app/priority.py`) ranks tanks for *warden review*, *repeat measurement* or *scheduled test* using configured thresholds, reading age and heat context; each actionable result opens one follow-up per tank (DB-enforced), with the rule reasons in the audit log |
+| ✅ | **Sensor ingestion**: register a probe per tank (token shown once, only its SHA-256 stored); `POST /api/sensors/ingest/` validates, de-duplicates and audits readings; handles AWS IoT Core's HTTPS-destination confirmation. Every observation has exactly one source, a person or a device (DB-enforced) |
+| ✅ | **Thermal twin** (`qr_app/twin.py`): hourly heat balance `dT = a·G + b·(Tair − T) + c` fitted by least squares on the tank's own data plus Open-Meteo air temperature and solar radiation; free-running hold-out validation; forecast only if plausible and within the error limit, never beyond the validated horizon, out-of-range weather flagged |
+| ✅ | **Measured cooling interventions**: measured daily peak vs the pre-intervention model's prediction for the same weather, with a 95% Student-t interval and degree-hours above 30 °C avoided |
+| ✅ | **Strip/thermometer photo evidence** on field measurements, stored privately with SHA-256 |
+| ⚠️ | **ESP32 firmware and AWS IoT Core setup** (`firmware/`, `deploy/aws/iot/`): written and JSON-validated, **not yet compiled, flashed or run on AWS** |
 | 🔜 | Chlorine-decay projection (deliberately not shipped: would need per-site calibration data and validation above 28 °C) |
 | 🔜 | Outbreak Radar: tank→block mapping with anonymous symptom counts (future work; needs privacy design and health-authority input) |
 | 🔜 | Live S3 + RDS deployment on AWS (code and instructions ready; not yet run against a real account) |
 | 🔜 | Email/SMS reminders, Hindi UI translation, CSV/PDF audit export, S3 Object Lock retention |
+
+## Thermal twin
+
+**Model.** For each hour *k*: `T[k+1] − T[k] = a·G[k] + b·(Tair[k] − T[k]) + c`.
+- `G` is solar radiation in kW/m². Open-Meteo reports `shortwave_radiation` as the preceding-hour mean, so the value labelled *k+1* is used for the interval starting at *k*.
+- `Tair` is air temperature in °C.
+- `T` is the measured tank-water temperature, as an hourly mean.
+- The equation is linear in *a, b, c*, so ordinary least squares solves it in pure Python. There is no black box.
+
+**Validation (what makes it honest):**
+1. Use only hours with a consecutive measured pair and weather data. Require at least 48 training and 24 held-out steps.
+2. Fit on the first 75% of steps in time order.
+3. **Free-run** the model over the last 25%, which it never saw, starting from one measured value. Report the mean absolute error and RMSE.
+4. Reject the model if *a < 0*, if *b* is outside (0, 1), or if the held-out error is above `TWIN_MAX_HOLDOUT_MAE_C` (1.5 °C).
+5. Forecast from the latest measured hour only if it is under 3 h old, and **never further ahead than the validated span**.
+6. The band is ±1.96 × held-out RMSE, labelled approximate. Hours with weather outside the training range are flagged and left out of the peak.
+
+**Intervention effect:**
+- Fit and validate the twin on data *before* the change.
+- For each later day with 18 or more logged hours, simulate the day from its first measurement, then compare the measured daily peak with the predicted one.
+- Report the mean difference, a 95% Student-t interval and the degree-hours above 30 °C avoided.
+- This assumes nothing else changed (refill schedule, water use, sensor position). If the interval includes zero, DHARA says there is no clear effect.
+
+**Why it matters:**
+- Chlorine-decay models are validated only up to 28 °C (Fisher et al., 2012).
+- The 2026 IIT Madras E. coli model lacked water temperature and chlorine as inputs.
+- Radiative-cooling paints are tested on roofs, boxes and grain silos, but in our search we found no published test on drinking-water tanks. Performance is also known to drop in humid tropics.
+
+DHARA measures these things rather than assuming them.
 
 ## Tank Test Priority
 
@@ -139,6 +175,10 @@ stateDiagram-v2
 
 ```mermaid
 flowchart LR
+    Probe[ESP32 + DS18B20 in tank] -->|MQTT/TLS X.509| IoT[AWS IoT Core]
+    IoT -->|rule: raw archive, no token| S3
+    IoT -->|rule: HTTPS| App
+    App -->|hourly air temp + solar| OM[Open-Meteo]
     Phone[Technician / Warden browser] -->|HTTPS| App
     Visitor[QR scan] -->|/qr/token/| App
     subgraph App[Django 5.2 app · gunicorn · Docker]
@@ -191,6 +231,12 @@ All checks are on the server (`qr_app/mixins.py`, `qr_app/services.py`). Every q
 Roles live on `Membership`, so being a warden in one institution grants nothing in another. Inviting an existing account requires that person to be signed in as that account.
 
 ## AWS integration
+
+**AWS IoT Core: tank probes** (written; not yet run on AWS).
+- Each probe is an IoT *thing* with its own X.509 certificate. Its policy allows it to connect only as itself and to publish only to `dhara/<thing>/telemetry`.
+- Rule 1 archives raw readings to S3 under `dhara/iot-raw/`, with the device token excluded.
+- Rule 2 forwards the readings over HTTPS to `/api/sensors/ingest/`, where DHARA checks the device token and validates every reading.
+- Setup steps, policies and a verification checklist are in [`deploy/aws/iot/README.md`](deploy/aws/iot/README.md).
 
 **Amazon S3: evidence and report storage** (implemented; tested against mocked S3; live test pending).
 
@@ -282,7 +328,7 @@ See `.env.example`. Variables read by the app:
 ```bash
 python manage.py makemigrations --check   # no pending model changes
 python manage.py migrate
-python manage.py test qr_app              # 60 tests; LiveS3Tests skipped without a bucket
+python manage.py test qr_app              # 82 tests; LiveS3Tests skipped without a bucket
 ```
 The suite covers:
 - tank creation and validation, QR token resolution
@@ -336,8 +382,10 @@ Static files are served by WhiteNoise. Don't use SQLite or local media storage o
 6. **Warden:** Link water-quality report → upload the SAMPLE PDF. The public page now shows the lab and sample date as *Uploaded, not yet reviewed*. Maintenance status is unchanged.
 7. **Follow-ups:** assign one, then resolve it with notes ("Cleaned, event #1 accepted").
 8. **Activity:** the full trail with SHA-256 digests. On the event page, "Re-check digest" verifies the stored file.
-9. **Test priority (real readings only):** open *Test priority*. With no readings, both tanks show "No free-chlorine reading on record" and get one follow-up each. Take a **real** DPD strip and thermometer reading at an actual tank (yours or a hostel's) and enter it under *Record measurement*. The ranking updates and shows the rule that fired. The weather panel shows the live Open-Meteo forecast for the campus location (`seed_demo --lat/--lon`). If the real forecast is below 35 °C, heat context honestly stays off. To show the heat rule, change `PRIORITY_FORECAST_HOT_C` and say on camera that it is a policy setting.
-10. **AWS:** run with `STORAGE_BACKEND=s3`, upload evidence and show the private object and presigned URL. This needs a real bucket.
+9. **Thermal twin (real probe data only):** register a sensor on the tank, flash the ESP32 and let it log for **at least 3 days**: 72 consecutive hourly steps are needed before validation can pass. Before then, the tank page shows how much more data is needed. Once it passes, it shows the held-out error, the forecast chart and the forecast peak. Test Priority then uses the forecast water temperature.
+   **Cooling result:** log the intervention (for example white paint) after 3+ days of baseline, then keep logging 3+ more days. The tank page reports the measured effect with its confidence interval, whatever it turns out to be.
+10. **Test priority (real readings only):** open *Test priority*. With no readings, both tanks show "No free-chlorine reading on record" and get one follow-up each. Take a **real** DPD strip and thermometer reading at an actual tank (yours or a hostel's) and enter it under *Record measurement*. The ranking updates and shows the rule that fired. The weather panel shows the live Open-Meteo forecast for the campus location (`seed_demo --lat/--lon`). If the real forecast is below 35 °C, heat context honestly stays off. To show the heat rule, change `PRIORITY_FORECAST_HOT_C` and say on camera that it is a policy setting.
+11. **AWS:** follow `deploy/aws/iot/README.md`, show the MQTT test client receiving probe messages and the S3 raw archive, and run with `STORAGE_BACKEND=s3`, upload evidence and show the private object and presigned URL. This needs a real bucket.
 
 ## Impact metrics to measure
 
@@ -363,6 +411,9 @@ Water-quality outcomes need proper testing and a separate evaluation.
 - The audit log, timestamps and digests aid traceability. They are not proof against administrator-level tampering.
 - Schedule intervals are whatever the institution configures. DHARA encodes no legal standard.
 - Rule-based follow-ups are generated when the overview or follow-up page loads. There is no background scheduler or notifications yet.
+- The twin is a single-node lumped model. It ignores stratification, refills and draw-off except as an average term (*c*), and is only as good as its held-out validation on that tank.
+- An intervention effect is an observational before/after comparison against a model, not a randomised trial. A second untreated tank logged in parallel makes it far more convincing.
+- The ESP32 firmware and AWS IoT setup have not been compiled, flashed or run.
 - Test Priority uses the readings people enter. It cannot detect a falsified reading, and DPD strips have limited precision.
 - The thermal profile is descriptive context. DHARA does not estimate tank-water temperature from air temperature.
 - Weather comes from a third-party forecast (Open-Meteo) and is shown only as air-temperature context.
