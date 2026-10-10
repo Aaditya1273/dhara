@@ -1,209 +1,201 @@
 # qr_app/forms.py
-from copy import deepcopy
-
 from django import forms
-from .models import User, EquipmentTemplate, Invitation, Company
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+from django.utils import timezone
+
+from . import services
+from .models import (
+    Company, Equipment, Invitation, ReviewStatus, ServiceRecord, User, WaterQualityReport,
+)
+
+DATE = forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d')
 
 
-# --- Формы для пользователей и приглашений (БЕЗ ИЗМЕНЕНИЙ) ---
+class PasswordPairMixin:
+    def clean(self):
+        cd = super().clean()
+        if cd.get('password') and cd.get('password') != cd.get('password2'):
+            self.add_error('password2', 'Passwords do not match.')
+        elif cd.get('password'):
+            try:
+                validate_password(cd['password'])
+            except ValidationError as e:
+                self.add_error('password', e)
+        return cd
 
-class UserRegistrationForm(forms.ModelForm):
-    company_name = forms.CharField(max_length=100, label="Название вашей компании")
-    password = forms.CharField(widget=forms.PasswordInput, label="Пароль")
-    password2 = forms.CharField(widget=forms.PasswordInput, label="Подтвердите пароль")
+
+class UserRegistrationForm(PasswordPairMixin, forms.ModelForm):
+    company_name = forms.CharField(max_length=100, label='Institution name')
+    password = forms.CharField(widget=forms.PasswordInput, label='Password')
+    password2 = forms.CharField(widget=forms.PasswordInput, label='Confirm password')
 
     class Meta:
         model = User
-        fields = ('email', 'company_name', 'password', 'password2')
-
-    def clean_password2(self):
-        cd = self.cleaned_data
-        if cd['password'] != cd['password2']:
-            raise forms.ValidationError('Пароли не совпадают.')
-        return cd['password2']
+        fields = ('email',)
 
     def clean_email(self):
-        email = self.cleaned_data['email']
-        if User.objects.filter(email=email).exists():
-            raise forms.ValidationError('Пользователь с таким email уже существует.')
+        email = self.cleaned_data['email'].lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise ValidationError('An account with this email already exists.')
         return email
 
 
-class InvitationForm(forms.ModelForm):
-    email = forms.EmailField(
-        label="Email сотрудника",
-        widget=forms.EmailInput(attrs={'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md',
-                                       'placeholder': 'name@example.com'})
-    )
+class InvitedUserRegistrationForm(PasswordPairMixin, forms.Form):
+    password = forms.CharField(widget=forms.PasswordInput, label='Choose a password')
+    password2 = forms.CharField(widget=forms.PasswordInput, label='Confirm password')
 
+
+class InvitationForm(forms.ModelForm):
     class Meta:
         model = Invitation
-        fields = ['email']
+        fields = ['email', 'role']
+        labels = {'email': 'Email address'}
 
 
-class InvitedUserRegistrationForm(forms.ModelForm):
-    password = forms.CharField(label="Придумайте пароль", widget=forms.PasswordInput(
-        attrs={'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md'}))
-    password2 = forms.CharField(label="Подтвердите пароль", widget=forms.PasswordInput(
-        attrs={'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md'}))
-
+class CompanySettingsForm(forms.ModelForm):
     class Meta:
-        model = User
-        fields = ('password', 'password2')
-
-    def clean_password2(self):
-        cd = self.cleaned_data
-        if cd['password'] != cd['password2']:
-            raise forms.ValidationError('Пароли не совпадают.')
-        return cd['password2']
-
-
-# --- Формы для Шаблонов (БЕЗ ИЗМЕНЕНИЙ) ---
-
-class EquipmentTemplateForm(forms.ModelForm):
-    class Meta:
-        model = EquipmentTemplate
+        model = Company
         fields = ['name']
-        labels = {'name': 'Название шаблона'}
-        widgets = {
-            'name': forms.TextInput(attrs={'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md'})
-        }
+        labels = {'name': 'Institution name'}
 
 
+def member_choices(company):
+    return User.objects.filter(membership__company=company).order_by('email')
 
 
-# === НОВЫЕ ДИНАМИЧЕСКИЕ ФОРМЫ ===
+class TankForm(forms.ModelForm):
+    class Meta:
+        model = Equipment
+        fields = ['tank_code', 'name', 'building', 'location', 'capacity_litres', 'responsible',
+                  'maintenance_interval_days', 'report_interval_days']
 
-# --- Базовый класс для динамических форм ---
-class BaseDynamicForm(forms.Form):
-    """Общий родительский класс для форм, генерирующих поля из JSON-схемы."""
-
-    FIELD_TYPE_MAP = {
-        'short_text': (forms.CharField, forms.TextInput, {}),
-        'long_text': (forms.CharField, forms.Textarea, {'attrs': {'rows': 3}}),
-        'number': (forms.IntegerField, forms.NumberInput, {}),
-        'date': (forms.DateField, forms.DateInput, {'attrs': {'type': 'date'}}),
-        'checkbox': (forms.BooleanField, forms.CheckboxInput, {}),
-    }
-
-    # --- ИЗМЕНЕНИЕ: Определяем CSS-классы для полей ---
-    # Классы взяты из вашего примера + добавлены стили для фокуса для лучшего UX
-    COMMON_INPUT_CLASSES = (
-        'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm '
-        'focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm'
-    )
-    # У чекбоксов обычно свои, отдельные стили
-    CHECKBOX_CLASSES = 'h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500'
-
-
-    def __init__(self, *args, **kwargs):
-        # Используем ту же исправленную версию, что и в прошлый раз
-        self.schema = kwargs.pop('schema', [])
+    def __init__(self, *args, company, **kwargs):
         super().__init__(*args, **kwargs)
-        self._create_fields_from_schema()
+        self.company = company
+        self.fields['responsible'].queryset = member_choices(company)
+        self.fields['responsible'].label_from_instance = lambda u: u.email
 
-    def _create_fields_from_schema(self):
-        for field_schema in self.schema:
-            if 'id' not in field_schema:
-                continue
-
-            field_id = field_schema.get('id')
-            field_label = field_schema.get('name')
-            field_type_key = field_schema.get('type')
-
-            FieldClass, WidgetClass, widget_kwargs = self.FIELD_TYPE_MAP.get(
-                field_type_key,
-                (forms.CharField, forms.TextInput, {})
-            )
-
-            # --- ИЗМЕНЕНИЕ: Логика добавления CSS-классов ---
-            final_widget_kwargs = deepcopy(widget_kwargs)
-            attrs = final_widget_kwargs.setdefault('attrs', {})
-
-            # Выбираем нужный набор классов в зависимости от типа поля
-            if field_type_key == 'checkbox':
-                current_classes = self.CHECKBOX_CLASSES
-            else:
-                current_classes = self.COMMON_INPUT_CLASSES
-
-            # Безопасно добавляем классы, не затирая уже существующие
-            attrs['class'] = f"{attrs.get('class', '')} {current_classes}".strip()
-            # --- КОНЕЦ ИЗМЕНЕНИЯ ---
-
-            widget_instance = WidgetClass(**final_widget_kwargs)
-            is_required = field_type_key != 'checkbox'
-
-            self.fields[field_id] = FieldClass(
-                label=field_label,
-                required=is_required,
-                widget=widget_instance
-            )
-
-# --- Форма для статических данных оборудования ---
-class StaticDataForm(BaseDynamicForm):
-    """Форма для создания/редактирования статических данных оборудования."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Добавляем стандартное поле "Название" в начало
-        self.fields = {'name': forms.CharField(
-            label="Название оборудования",
-            widget=forms.TextInput(attrs={'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md'})
-        ), **self.fields}
+    def clean_tank_code(self):
+        code = self.cleaned_data['tank_code'].strip().upper()
+        clash = Equipment.objects.filter(company=self.company, tank_code__iexact=code).exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise ValidationError('Another tank in this institution already uses this ID.')
+        return code
 
 
-# --- Форма для чек-листа в журнале обслуживания ---
 class MultipleFileInput(forms.ClearableFileInput):
     allow_multiple_selected = True
 
 
 class MultipleFileField(forms.FileField):
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault("widget", MultipleFileInput(attrs={
-            'class': 'mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-600 hover:file:bg-primary-100'}))
+    def __init__(self, *args, max_files=3, **kwargs):
+        self.max_files = max_files
+        kwargs.setdefault('widget', MultipleFileInput())
+        kwargs.setdefault('required', False)
         super().__init__(*args, **kwargs)
 
     def clean(self, data, initial=None):
-        single_file_clean = super().clean
-        if isinstance(data, (list, tuple)):
-            return [single_file_clean(d, initial) for d in data]
-        return single_file_clean(data, initial)
+        files = [f for f in (data if isinstance(data, (list, tuple)) else [data]) if f]
+        if len(files) > self.max_files:
+            raise ValidationError(f'Attach at most {self.max_files} files here.')
+        return [super(MultipleFileField, self).clean(f, initial) for f in files]
 
 
-class DynamicChecklistForm(BaseDynamicForm):
-    """Форма для заполнения чек-листа и добавления записи в журнал."""
+class EvidenceFieldsMixin:
+    """Validates each uploaded file's type, size and real content at the form layer."""
+    evidence_fields = {'before_photos': ('before', services.IMAGE_TYPES),
+                       'after_photos': ('after', services.IMAGE_TYPES),
+                       'documents': ('document', {**services.IMAGE_TYPES, **services.PDF_TYPES})}
 
-    images = MultipleFileField(
-        label="Прикрепить фотографии (до 3 шт., макс. 5 МБ каждая)",
-        required=False
-    )
+    def _clean_files(self, name):
+        files = self.cleaned_data.get(name) or []
+        for f in files:
+            services.validate_upload(f, self.evidence_fields[name][1])
+        return files
 
-    def clean_images(self):
-        images = self.cleaned_data.get('images', [])
-        if len(images) > 3:
-            raise forms.ValidationError("Можно загрузить не более 3 фотографий.")
+    def clean_before_photos(self):
+        return self._clean_files('before_photos')
 
-        for image in images:
-            # ПРОВЕРКА РАЗМЕРА (5 МБ)
-            if image.size > 5 * 1024 * 1024:
-                raise forms.ValidationError(f"Файл '{image.name}' слишком большой. Максимальный размер - 5 МБ.")
-            # ПРОВЕРКА ТИПА (только изображения)
-            if image.content_type not in ['image/jpeg', 'image/png', 'image/gif']:
-                raise forms.ValidationError(
-                    f"Файл '{image.name}' имеет недопустимый формат. Разрешены только JPG, PNG, GIF.")
+    def clean_after_photos(self):
+        return self._clean_files('after_photos')
 
-        return images
+    def clean_documents(self):
+        return self._clean_files('documents')
 
-class CompanySettingsForm(forms.ModelForm):
-    """Форма для редактирования названия и логотипа компании."""
+    def evidence(self):
+        return [(self.evidence_fields[name][0], f)
+                for name in self.evidence_fields if name in self.fields
+                for f in self.cleaned_data.get(name, [])]
+
+
+class MaintenanceEventForm(EvidenceFieldsMixin, forms.ModelForm):
+    before_photos = MultipleFileField(label='Before photos', help_text='JPG or PNG, up to 3, 8 MB each.')
+    after_photos = MultipleFileField(label='After photos', help_text='JPG or PNG, up to 3, 8 MB each.')
+    documents = MultipleFileField(label='Supporting documents', help_text='Invoice, checklist: PDF/JPG/PNG.')
+
     class Meta:
-        model = Company
-        fields = ['name', 'logo']
-        labels = {
-            'name': 'Название компании',
-            'logo': 'Логотип (старый будет заменен)'
-        }
-        widgets = {
-            'name': forms.TextInput(attrs={'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md', 'readonly': True}),
-            'logo': forms.ClearableFileInput(attrs={'class': 'mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-600 hover:file:bg-primary-100'}),
-        }
+        model = ServiceRecord
+        fields = ['event_type', 'work_date', 'provider_name', 'notes']
+        widgets = {'work_date': DATE, 'notes': forms.Textarea(attrs={'rows': 3})}
+        help_texts = {'work_date': 'When the work was done. Your submission time is recorded separately.'}
+
+    def clean_work_date(self):
+        d = self.cleaned_data['work_date']
+        if d > timezone.localdate():
+            raise ValidationError('The work date cannot be in the future.')
+        return d
+
+
+class RespondForm(EvidenceFieldsMixin, forms.Form):
+    note = forms.CharField(widget=forms.Textarea(attrs={'rows': 2}), required=False, label='Response to reviewer')
+    after_photos = MultipleFileField(label='Additional photos')
+    documents = MultipleFileField(label='Additional documents')
+
+
+class ReviewForm(forms.Form):
+    decision = forms.ChoiceField(choices=[
+        (ReviewStatus.ACCEPTED, 'Accept'),
+        (ReviewStatus.CHANGES_REQUESTED, 'Request more evidence'),
+        (ReviewStatus.REJECTED, 'Reject'),
+    ], widget=forms.RadioSelect)
+    notes = forms.CharField(widget=forms.Textarea(attrs={'rows': 2}), required=False, label='Review note',
+                            help_text='Required when rejecting or requesting more evidence.')
+
+
+class WaterQualityReportForm(forms.ModelForm):
+    class Meta:
+        model = WaterQualityReport
+        fields = ['lab_name', 'sample_date', 'report_date', 'parameters', 'results_summary', 'notes', 'file']
+        widgets = {'sample_date': DATE, 'report_date': DATE,
+                   'results_summary': forms.Textarea(attrs={'rows': 3}), 'notes': forms.Textarea(attrs={'rows': 2})}
+        labels = {'file': 'Original report (PDF, JPG or PNG)'}
+
+    def clean_file(self):
+        f = self.cleaned_data['file']
+        services.validate_upload(f, {**services.PDF_TYPES, **services.IMAGE_TYPES})
+        return f
+
+    def clean(self):
+        cd = super().clean()
+        sample, report = cd.get('sample_date'), cd.get('report_date')
+        if sample and sample > timezone.localdate():
+            self.add_error('sample_date', 'The sample date cannot be in the future.')
+        if sample and report and report < sample:
+            self.add_error('report_date', 'The report date cannot be before the sample date.')
+        return cd
+
+
+class FollowUpAssignForm(forms.Form):
+    assigned_to = forms.ModelChoiceField(queryset=User.objects.none(), required=False, label='Assign to')
+    due_date = forms.DateField(widget=DATE)
+
+    def __init__(self, *args, company, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['assigned_to'].queryset = member_choices(company)
+        self.fields['assigned_to'].label_from_instance = lambda u: u.email
+
+
+class ResolveForm(forms.Form):
+    notes = forms.CharField(widget=forms.Textarea(attrs={'rows': 2}), label='Resolution notes')
+

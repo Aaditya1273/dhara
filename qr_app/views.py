@@ -1,460 +1,117 @@
 # qr_app/views.py
-import base64
-import hashlib
-import hmac
 import ipaddress
-import secrets
-from datetime import date, timedelta
-from io import BytesIO
 import json
 import logging
+import secrets
 import uuid
-from itertools import chain
-from operator import attrgetter
+from datetime import timedelta
+from io import BytesIO
 
-from django.views.decorators.csrf import csrf_exempt
-from yookassa import Configuration, Payment as YooKassaPayment
 import qrcode
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.views import LoginView, LogoutView
-from django.contrib.messages.views import SuccessMessageMixin
-from django.core.exceptions import PermissionDenied
-from django.core.paginator import Paginator
+from django.contrib.auth.views import redirect_to_login
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.db.models import ProtectedError, Count, Value, CharField, F
-from django.http import HttpResponse, HttpResponseForbidden, JsonResponse, HttpResponseBadRequest
-from django.shortcuts import render, redirect, get_object_or_404
-from django.urls import reverse_lazy, reverse
+from django.db.models import Count, Q
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
-from django.utils.html import format_html
-from django.utils.text import slugify
 from django.views import View
-from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView, TemplateView
-from django.views.generic.edit import FormMixin
+from django.views.decorators.csrf import csrf_exempt
+from django.views.generic import ListView, TemplateView
 
-from project_qr import settings
-from .forms import (
-    UserRegistrationForm, EquipmentTemplateForm, InvitationForm,
-    InvitedUserRegistrationForm, StaticDataForm, DynamicChecklistForm,
-    CompanySettingsForm
-)
-from .mixins import (
-    CompanyRequiredMixin, AdminRequiredMixin, CompanyQuerysetMixin,
-    SuccessURLForCompanyMixin, ActiveSubscriptionRequiredMixin
-)
-from .models import (
-    Company, SubscriptionPlan, Membership, User, EquipmentTemplate,
-    Equipment, Invitation, ServiceRecord, ServiceRecordPhoto, Payment
-)
 from . import services
+from .forms import (
+    CompanySettingsForm, FollowUpAssignForm, InvitationForm, InvitedUserRegistrationForm, MaintenanceEventForm,
+    ResolveForm, RespondForm, ReviewForm, TankForm, UserRegistrationForm, WaterQualityReportForm,
+)
+from .mixins import ActiveSubscriptionRequiredMixin, AdminRequiredMixin, BillingEnabledMixin, CompanyRequiredMixin
+from .models import (
+    AuditEvent, Company, Equipment, FollowUpTask, Invitation, Membership, Payment, ReviewStatus, Role,
+    ServiceRecord, ServiceRecordPhoto, SubscriptionPlan, User, WaterQualityReport,
+)
 
-# Инициализация логгера для этого файла
 logger = logging.getLogger(__name__)
 
 
-# --- Аутентификация и Регистрация ---
+def flash_errors(request, exc):
+    for msg in getattr(exc, 'messages', [str(exc)]):
+        messages.error(request, msg)
+
+
+def run_storage_action(request, fn):
+    """Runs an upload. Storage failures (disk, S3) roll back the DB transaction and are reported
+    honestly instead of showing success. Returns the result or None."""
+    try:
+        return fn()
+    except (ValidationError, PermissionDenied):
+        raise
+    except Exception:
+        logger.exception('Upload/storage failure')
+        messages.error(request, 'The file could not be stored, so nothing was saved. Please try again.')
+        return None
+
+
+class CompanyView(CompanyRequiredMixin, ActiveSubscriptionRequiredMixin, View):
+    def tanks(self):
+        return Equipment.objects.filter(company=self.company)
+
+    def get_tank(self, pk):
+        return get_object_or_404(self.tanks().with_dates(), pk=pk)
+
+    def get_event(self, pk):
+        return get_object_or_404(ServiceRecord.objects.select_related('equipment', 'author', 'reviewed_by'),
+                                 pk=pk, equipment__company=self.company)
+
+    def go(self, name, **kwargs):
+        return redirect(f'qr_app:{name}', company_slug=self.company.slug, **kwargs)
+
+
+# --- Public pages ------------------------------------------------------------------------
+
+class LandingPageView(TemplateView):
+    template_name = 'landing_page.html'
+
+
+def healthz(request):
+    return JsonResponse({'status': 'ok'})
+
+
+def public_tank_status(request, token):
+    """Read-only QR page. Shows dates and statuses only: no people, notes, files or internal location."""
+    tank = get_object_or_404(Equipment.objects.select_related('company').with_dates(), public_token=token)
+    latest_event = tank.records.order_by('-created_at').first()
+    latest_report = tank.reports.first()
+    open_kinds = set(tank.followups.filter(status=FollowUpTask.Status.OPEN).values_list('kind', flat=True))
+    return render(request, 'public/tank_status.html', {
+        'tank': tank, 'latest_event': latest_event, 'latest_report': latest_report,
+        'evidence_status': latest_event.evidence_status if latest_event else None,
+        'open_kinds': open_kinds, 'Kind': FollowUpTask.Kind, 'now': timezone.now(),
+    })
+
+
+# --- Auth --------------------------------------------------------------------------------
+
 def register_view(request):
     if request.user.is_authenticated:
-        messages.info(request, "Вы уже вошли в систему.")
         return redirect('select_company')
-
-    if request.method == 'POST':
-        form = UserRegistrationForm(request.POST)
-        if form.is_valid():
-            with transaction.atomic():
-                user = form.save(commit=False)
-                user.username = form.cleaned_data['email']
-                user.role = User.Role.ADMIN
-                user.set_password(form.cleaned_data['password'])
-                user.save()
-
-                company = Company.objects.create(name=form.cleaned_data['company_name'])
-                Membership.objects.create(user=user, company=company)
-
-                login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-                logger.info(
-                    f"Новый пользователь и компания зарегистрированы. User ID: {user.id}, Company ID: {company.id}")
-                return redirect('select_company')
-        else:
-            logger.warning(f"Ошибка регистрации нового пользователя. Ошибки формы: {form.errors.as_json()}")
-    else:
-        form = UserRegistrationForm()
+    form = UserRegistrationForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        with transaction.atomic():
+            user = form.save(commit=False)
+            user.username = form.cleaned_data['email']
+            user.set_password(form.cleaned_data['password'])
+            user.save()
+            company = Company.objects.create(name=form.cleaned_data['company_name'])
+            Membership.objects.create(user=user, company=company, role=Role.ADMIN)
+            services.audit(company, user, 'institution.created', company, f"Institution {company.name} registered")
+        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+        return redirect('select_company')
     return render(request, 'registration/register.html', {'form': form})
-
-
-# --- Дашборд ---
-class DashboardView(CompanyRequiredMixin, ActiveSubscriptionRequiredMixin, View):
-    """Отображает дашборд в зависимости от роли пользователя."""
-
-    def get(self, request, *args, **kwargs):
-        context = {'company': self.company}
-
-        if request.user.is_admin:
-            recent_records = ServiceRecord.objects.filter(
-                equipment__company=self.company
-            ).select_related('equipment', 'author').order_by('-created_at')[:5]
-
-            recent_equipment = Equipment.objects.filter(
-                company=self.company
-            ).select_related('template').order_by('-created_at')[:5]
-
-            for item in recent_records: item.type = 'record'
-            for item in recent_equipment: item.type = 'equipment'
-
-            activity_list = sorted(
-                chain(recent_records, recent_equipment),
-                key=attrgetter('created_at'),
-                reverse=True
-            )[:5]
-
-            context.update({
-                'equipment_count': self.company.equipment.count(),
-                'user_count': self.company.members.count(),
-                'activity_list': activity_list,
-            })
-            return render(request, 'dashboards/admin_dashboard.html', context)
-
-        recent_records = ServiceRecord.objects.filter(
-            equipment__company=self.company, author=request.user
-        ).select_related('equipment').order_by('-created_at')[:5]
-
-        equipment_list = Equipment.objects.filter(company=self.company).order_by('name')
-
-        context.update({
-            'recent_records': recent_records,
-            'equipment_list': equipment_list,
-        })
-        return render(request, 'dashboards/technician_dashboard.html', context)
-
-
-# --- Управление Шаблонами ---
-class TemplateListView(CompanyRequiredMixin, ActiveSubscriptionRequiredMixin, AdminRequiredMixin, ListView):
-    model = EquipmentTemplate
-    template_name = 'templates/template_list.html'
-    context_object_name = 'templates'
-
-    def get_queryset(self):
-        return EquipmentTemplate.objects.filter(
-            company=self.company
-        ).annotate(equipment_count=Count('equipment'))
-
-
-class TemplateCreateView(CompanyRequiredMixin, AdminRequiredMixin, ActiveSubscriptionRequiredMixin,
-                         SuccessURLForCompanyMixin, SuccessMessageMixin, CreateView):
-    model = EquipmentTemplate
-    form_class = EquipmentTemplateForm
-    template_name = 'templates/template_form.html'
-    success_message = "Шаблон успешно создан!"
-    list_view_name = 'qr_app:template_list'
-
-    def form_valid(self, form):
-        form.instance.company = self.company
-        response = super().form_valid(form)
-        logger.info(
-            f"User ID: {self.request.user.id} создал новый шаблон ID: {self.object.id} для компании '{self.company.slug}'")
-        return response
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['page_title'] = "Создание нового шаблона"
-        return context
-
-
-class TemplateDeleteView(CompanyRequiredMixin, ActiveSubscriptionRequiredMixin, AdminRequiredMixin,
-                         CompanyQuerysetMixin, SuccessURLForCompanyMixin, DeleteView):
-    model = EquipmentTemplate
-    template_name = 'templates/template_confirm_delete.html'
-    list_view_name = 'qr_app:template_list'
-
-    def post(self, request, *args, **kwargs):
-        template_id = self.get_object().id
-        try:
-            response = super().post(request, *args, **kwargs)
-            logger.info(f"User ID: {request.user.id} удалил шаблон ID: {template_id} из компании '{self.company.slug}'")
-            messages.success(request, "Шаблон успешно удален.")
-            return response
-        except ProtectedError:
-            logger.warning(
-                f"User ID: {request.user.id} не смог удалить защищенный шаблон ID: {template_id} в компании '{self.company.slug}'")
-            messages.error(request,
-                           "Невозможно удалить шаблон, так как существуют единицы оборудования, использующие его.")
-            return redirect('qr_app:template_list', company_slug=self.kwargs['company_slug'])
-
-
-class TemplateDetailView(CompanyRequiredMixin, ActiveSubscriptionRequiredMixin, AdminRequiredMixin,
-                         CompanyQuerysetMixin, DetailView):
-    model = EquipmentTemplate
-    template_name = 'templates/template_detail.html'
-    context_object_name = 'template'
-
-    def post(self, request, *args, **kwargs):
-        """
-        Обрабатывает POST-запросы:
-        - JSON для переименования шаблона.
-        - Form-data для добавления/удаления полей.
-        """
-        template = self.get_object()
-
-        if request.content_type == 'application/json':
-            try:
-                data = json.loads(request.body)
-                action = data.get('action')
-                if action == 'rename_template':
-                    new_name = data.get('new_name', '').strip()
-                    if not new_name:
-                        return JsonResponse({'status': 'error', 'message': 'Название не может быть пустым.'}, status=400)
-                    template.name = new_name
-                    template.save()
-                    logger.info(f"Шаблон ID {template.id} переименован в '{new_name}' пользователем {request.user.id}")
-                    return JsonResponse({'status': 'ok', 'new_name': template.name})
-                return JsonResponse({'status': 'error', 'message': 'Неизвестное AJAX действие'}, status=400)
-            except json.JSONDecodeError:
-                return JsonResponse({'status': 'error', 'message': 'Некорректный JSON.'}, status=400)
-        else:
-            action = request.POST.get('action')
-            if action == 'add_field':
-                field_name = request.POST.get('field_name', '').strip()
-                field_type = request.POST.get('field_type')
-                field_purpose = request.POST.get('field_purpose', 'static')
-                if field_name and field_type:
-                    template.add_field(field_name, field_type, field_purpose)
-                    logger.info(f"User ID: {request.user.id} добавил поле '{field_name}' в шаблон ID: {template.id}")
-                    messages.success(request, f"Поле '{field_name}' добавлено.")
-                return redirect('qr_app:template_detail', company_slug=self.company.slug, pk=template.pk)
-
-            if action == 'delete_field':
-                field_id = request.POST.get('field_id')
-                if field_id and template.delete_field(field_id):
-                    logger.info(f"User ID: {request.user.id} удалил поле ID: {field_id} из шаблона ID: {template.id}")
-                    return JsonResponse({'status': 'ok'})
-                return JsonResponse({'status': 'error', 'message': 'Field not found or missing ID'}, status=400)
-
-            return redirect('qr_app:template_detail', company_slug=self.company.slug, pk=template.pk)
-
-
-# --- Управление Оборудованием ---
-class EquipmentListView(CompanyRequiredMixin, ActiveSubscriptionRequiredMixin, CompanyQuerysetMixin, ListView):
-    model = Equipment
-    template_name = 'equipment/equipment_list.html'
-    context_object_name = 'equipment_list'
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['equipment_count'] = self.company.equipment.count()
-        context['equipment_limit'] = self.company.subscription_plan.max_equipment
-        return context
-
-
-class EquipmentCreateFromTemplateView(CompanyRequiredMixin, ActiveSubscriptionRequiredMixin, AdminRequiredMixin, View):
-    def get(self, request, *args, **kwargs):
-        if self.company.equipment.count() >= self.company.subscription_plan.max_equipment:
-            logger.warning(
-                f"Компания '{self.company.slug}' достигла лимита оборудования ({self.company.subscription_plan.max_equipment}). User ID: {request.user.id} не смог открыть форму создания.")
-            messages.error(request, "Достигнут лимит на количество оборудования. Удалите старое или смените тариф.")
-            return redirect('qr_app:equipment_list', company_slug=self.company.slug)
-
-        template = get_object_or_404(EquipmentTemplate, pk=kwargs.get('template_pk'), company=self.company)
-        static_schema = [f for f in template.fields_schema if f.get('purpose', 'static') == 'static']
-        form = StaticDataForm(schema=static_schema)
-        return render(request, 'equipment/equipment_static_form.html', {'form': form, 'template': template})
-
-    def post(self, request, *args, **kwargs):
-        if self.company.equipment.count() >= self.company.subscription_plan.max_equipment:
-            logger.error(
-                f"Компания '{self.company.slug}' достигла лимита оборудования. Попытка создания оборудования User ID: {request.user.id} была заблокирована.")
-            messages.error(request, "Достигнут лимит на количество оборудования.")
-            return redirect('qr_app:equipment_list', company_slug=self.company.slug)
-
-        template = get_object_or_404(EquipmentTemplate, pk=kwargs.get('template_pk'), company=self.company)
-        static_schema = [f for f in template.fields_schema if f.get('purpose', 'static') == 'static']
-        form = StaticDataForm(request.POST, schema=static_schema)
-
-        if form.is_valid():
-            static_data = {key: (value.isoformat() if isinstance(value, date) else value) for key, value in
-                           form.cleaned_data.items() if key != 'name'}
-            equipment = Equipment.objects.create(
-                company=self.company,
-                template=template,
-                name=form.cleaned_data['name'],
-                static_data=static_data
-            )
-            logger.info(
-                f"User ID: {request.user.id} создал оборудование ID: {equipment.id} для компании '{self.company.slug}'")
-            messages.success(request, "Оборудование успешно добавлено.")
-            return redirect('qr_app:equipment_list', company_slug=self.company.slug)
-
-        logger.warning(
-            f"User ID: {request.user.id} не смог создать оборудование. Ошибки формы: {form.errors.as_json()}")
-        return render(request, 'equipment/equipment_static_form.html', {'form': form, 'template': template})
-
-
-class EquipmentUpdateView(CompanyRequiredMixin, ActiveSubscriptionRequiredMixin, AdminRequiredMixin, View):
-    def get(self, request, *args, **kwargs):
-        pk = kwargs.get('pk')
-        equipment = get_object_or_404(Equipment, pk=pk, company=self.company)
-        static_schema = [f for f in equipment.template.fields_schema if f.get('purpose', 'static') == 'static']
-        initial_data = {'name': equipment.name, **(equipment.static_data or {})}
-        form = StaticDataForm(schema=static_schema, initial=initial_data)
-        return render(request, 'equipment/equipment_static_form.html',
-                      {'form': form, 'template': equipment.template, 'page_title': 'Редактирование оборудования'})
-
-    def post(self, request, *args, **kwargs):
-        pk = kwargs.get('pk')
-        equipment = get_object_or_404(Equipment, pk=pk, company=self.company)
-        static_schema = [f for f in equipment.template.fields_schema if f.get('purpose', 'static') == 'static']
-        form = StaticDataForm(request.POST, schema=static_schema)
-
-        if form.is_valid():
-            equipment.name = form.cleaned_data['name']
-            equipment.static_data = {key: (value.isoformat() if isinstance(value, date) else value) for key, value in
-                                     form.cleaned_data.items() if key != 'name'}
-            equipment.slug = slugify(equipment.name, allow_unicode=True)
-            equipment.save()
-            logger.info(
-                f"User ID: {request.user.id} обновил оборудование ID: {equipment.id} в компании '{self.company.slug}'")
-            messages.success(request, "Оборудование успешно обновлено.")
-            return redirect('qr_app:equipment_detail', company_slug=self.company.slug, pk=equipment.pk)
-
-        logger.warning(
-            f"User ID: {request.user.id} не смог обновить оборудование ID: {equipment.id}. Ошибки формы: {form.errors.as_json()}")
-        return render(request, 'equipment/equipment_static_form.html',
-                      {'form': form, 'template': equipment.template, 'page_title': 'Редактирование оборудования'})
-
-
-class EquipmentDeleteView(CompanyRequiredMixin, AdminRequiredMixin, CompanyQuerysetMixin, SuccessURLForCompanyMixin,
-                          DeleteView):
-    model = Equipment
-    template_name = 'equipment/equipment_confirm_delete.html'
-    success_message = "Оборудование успешно удалено."
-    list_view_name = 'qr_app:equipment_list'
-
-    def form_valid(self, form):
-        equipment_id = self.get_object().id
-        messages.success(self.request, self.success_message)
-        response = super().form_valid(form)
-        logger.info(
-            f"User ID: {self.request.user.id} удалил оборудование ID: {equipment_id} из компании '{self.company.slug}'")
-        return response
-
-
-class EquipmentDetailView(CompanyRequiredMixin, ActiveSubscriptionRequiredMixin, CompanyQuerysetMixin, DetailView):
-    model = Equipment
-    template_name = 'equipment/equipment_detail.html'
-    context_object_name = 'equipment'
-
-    def get_queryset(self):
-        return Equipment.objects.filter(company=self.company).prefetch_related('records__author')
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        equipment = self.get_object()
-        checklist_schema = [f for f in equipment.template.fields_schema if f.get('purpose') == 'checklist']
-        initial_data = equipment.current_checklist_state or {}
-        context['checklist_form'] = DynamicChecklistForm(schema=checklist_schema, initial=initial_data)
-        return context
-
-    def post(self, request, *args, **kwargs):
-        equipment = self.get_object()
-        checklist_schema = [f for f in equipment.template.fields_schema if f.get('purpose') == 'checklist']
-        form = DynamicChecklistForm(request.POST, request.FILES, schema=checklist_schema)
-
-        if form.is_valid():
-            record = services.create_service_record_from_checklist(
-                equipment=equipment,
-                user=request.user,
-                form_data=form.cleaned_data,
-                uploaded_files=request.FILES.getlist('images')
-            )
-            logger.info(
-                f"User ID: {request.user.id} добавил сервисную запись ID: {record.id} для оборудования ID: {equipment.id} в компании '{self.company.slug}'")
-            messages.success(request, "Запись в журнал успешно добавлена.")
-        else:
-            logger.error(
-                f"User ID: {request.user.id} не смог добавить запись для оборудования ID: {equipment.id}. Ошибки формы: {form.errors.as_json()}")
-            messages.error(request, "Ошибка в заполнении формы.")
-            context = self.get_context_data(object=equipment)
-            context['checklist_form'] = form
-            return self.render_to_response(context)
-
-        return redirect('qr_app:equipment_detail', company_slug=self.company.slug, pk=equipment.pk)
-
-
-@login_required
-def generate_qr_code(request, company_slug, equipment_id):
-    if not request.user.companies.filter(slug=company_slug).exists():
-        logger.error(
-            f"User ID: {request.user.id} пытался сгенерировать QR для оборудования ID: {equipment_id} без доступа к компании '{company_slug}'")
-        raise PermissionDenied
-
-    equipment = get_object_or_404(Equipment, id=equipment_id, company__slug=company_slug)
-    url = request.build_absolute_uri(
-        reverse('qr_app:equipment_detail', kwargs={'company_slug': company_slug, 'pk': equipment.pk}))
-    img = qrcode.make(url)
-    buffer = BytesIO()
-    img.save(buffer, "PNG")
-    logger.info(
-        f"User ID: {request.user.id} сгенерировал QR-код для оборудования ID: {equipment.id} в компании '{company_slug}'")
-    return HttpResponse(buffer.getvalue(), content_type="image/png")
-
-
-# --- Управление Командой ---
-class TeamManageView(CompanyRequiredMixin, ActiveSubscriptionRequiredMixin, AdminRequiredMixin,
-                     SuccessURLForCompanyMixin, FormMixin, ListView):
-    template_name = 'team/manage_team.html'
-    context_object_name = 'members'
-    form_class = InvitationForm
-    list_view_name = 'qr_app:manage_team'
-
-    def get_queryset(self):
-        return self.company.members.all()
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['user_limit'] = self.company.subscription_plan.max_users
-        context['current_user_count'] = self.company.members.count()
-        context['pending_invites_count'] = Invitation.objects.filter(company=self.company).count()
-        context['invitations'] = Invitation.objects.filter(company=self.company)
-        return context
-
-    def form_valid(self, form):
-        current_users = self.company.members.count()
-        pending_invites = Invitation.objects.filter(company=self.company).count()
-        if current_users + pending_invites >= self.company.subscription_plan.max_users:
-            logger.error(
-                f"User ID: {self.request.user.id} не смог отправить приглашение. Достигнут лимит пользователей в компании '{self.company.slug}'")
-            messages.error(self.request, "Достигнут лимит на количество сотрудников. Приглашение не было отправлено.")
-            return self.form_invalid(form)
-
-        email = form.cleaned_data['email']
-        if self.company.members.filter(email=email).exists():
-            messages.error(self.request, f"Пользователь с email {email} уже в вашей команде.")
-            return self.form_invalid(form)
-
-        invitation = form.save(commit=False)
-        invitation.company = self.company
-        invitation.token = secrets.token_urlsafe(32)
-        invitation.save()
-        logger.info(f"User ID: {self.request.user.id} создал приглашение для {email} в компанию '{self.company.slug}'")
-
-        invite_url = self.request.build_absolute_uri(reverse('accept_invitation', kwargs={'token': invitation.token}))
-        messages.success(self.request, format_html(
-            'Приглашение успешно создано! Ссылка для регистрации: <br>'
-            '<input type="text" value="{}" class="w-full p-1 border rounded bg-gray-100" readonly onclick="this.select();">',
-            invite_url
-        ))
-        return redirect(self.get_success_url())
-
-    def post(self, request, *args, **kwargs):
-        self.object_list = self.get_queryset()
-        form = self.get_form()
-        if form.is_valid():
-            return self.form_valid(form)
-        else:
-            logger.warning(
-                f"User ID: {request.user.id} не смог отправить приглашение. Ошибки формы: {form.errors.as_json()}")
-            return self.form_invalid(form)
 
 
 def accept_invitation_view(request, token):
@@ -462,370 +119,564 @@ def accept_invitation_view(request, token):
     email, company = invitation.email, invitation.company
     if invitation.created_at < timezone.now() - timedelta(days=7):
         invitation.delete()
-        messages.error(request, "Срок действия этого приглашения истек.")
-        return redirect('register')
-    if existing_user := User.objects.filter(email=email).first():
-        Membership.objects.get_or_create(user=existing_user, company=company)
-        invitation.delete()
-        logger.info(
-            f"Существующий пользователь User ID: {existing_user.id} принял приглашение в компанию '{company.slug}'")
-        messages.success(request, f"Вы были успешно добавлены в компанию {company.name}.")
+        messages.error(request, 'This invitation has expired. Ask your warden for a new one.')
         return redirect('login')
 
-    if request.method == 'POST':
-        form = InvitedUserRegistrationForm(request.POST)
-        if form.is_valid():
-            with transaction.atomic():
-                user = User.objects.create_user(
-                    username=email, email=email,
-                    password=form.cleaned_data['password'],
-                    role=User.Role.TECHNICIAN
-                )
-                Membership.objects.create(user=user, company=company)
-                invitation.delete()
-            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-            logger.info(
-                f"Новый пользователь User ID: {user.id} зарегистрировался и принял приглашение в компанию '{company.slug}'")
-            return redirect('select_company')
-        else:
-            logger.warning(
-                f"Ошибка регистрации по приглашению для email {email}. Ошибки формы: {form.errors.as_json()}")
-    else:
-        form = InvitedUserRegistrationForm()
+    existing_user = User.objects.filter(email__iexact=email).first()
+    if existing_user:
+        # The invitee must prove they own the account before joining.
+        if request.user != existing_user:
+            messages.info(request, f'Sign in as {email} to accept this invitation.')
+            return redirect_to_login(request.get_full_path())
+        with transaction.atomic():
+            Membership.objects.get_or_create(user=existing_user, company=company, defaults={'role': invitation.role})
+            services.audit(company, existing_user, 'member.joined', company, f"{email} joined as {invitation.get_role_display()}")
+            invitation.delete()
+        messages.success(request, f'You have joined {company.name}.')
+        return redirect('qr_app:dashboard', company_slug=company.slug)
 
+    form = InvitedUserRegistrationForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        with transaction.atomic():
+            user = User.objects.create_user(username=email, email=email, password=form.cleaned_data['password'])
+            Membership.objects.create(user=user, company=company, role=invitation.role)
+            services.audit(company, user, 'member.joined', company, f"{email} joined as {invitation.get_role_display()}")
+            invitation.delete()
+        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+        return redirect('select_company')
     return render(request, 'invitations/accept_invitation.html', {'form': form, 'email': email, 'company': company})
 
 
-class MemberDeleteView(CompanyRequiredMixin, AdminRequiredMixin, CompanyQuerysetMixin, SuccessURLForCompanyMixin,
-                       DeleteView):
-    model = User
-    template_name = 'team/member_confirm_delete.html'
-    success_message = "Сотрудник успешно удален из компании."
-    list_view_name = 'qr_app:manage_team'
-
-    def get_queryset(self):
-        return self.company.members.all()
-
-    def dispatch(self, request, *args, **kwargs):
-        member_pk_to_delete = kwargs.get('pk')
-        if str(member_pk_to_delete) == str(request.user.pk):
-            logger.error(
-                f"User ID: {request.user.id} пытался удалить самого себя (URL PK: {member_pk_to_delete}). Доступ запрещен.")
-            return HttpResponseForbidden("Вы не можете удалить самого себя.")
-        return super().dispatch(request, *args, **kwargs)
-
-    def form_valid(self, form):
-        member_to_delete = self.get_object()
-        membership = Membership.objects.get(user=member_to_delete, company=self.company)
-        membership.delete()
-        logger.info(
-            f"User ID: {self.request.user.id} удалил участника ID: {member_to_delete.id} из компании '{self.company.slug}'")
-        messages.success(self.request, self.success_message)
-        return redirect(self.get_success_url())
-
-
-# --- Настройки и Подписка ---
-class CompanySettingsView(CompanyRequiredMixin, AdminRequiredMixin, SuccessMessageMixin, UpdateView):
-    model = Company
-    form_class = CompanySettingsForm
-    template_name = 'settings/company_settings.html'
-    success_message = "Настройки компании успешно обновлены."
-
-    def get_object(self, queryset=None):
-        return self.company
-
-    def get_success_url(self):
-        return reverse('qr_app:company_settings', kwargs={'company_slug': self.company.slug})
-
-    def form_valid(self, form):
-        response = super().form_valid(form)
-        logger.info(f"User ID: {self.request.user.id} обновил настройки компании '{self.company.slug}'")
-        return response
-
-
-class SubscriptionManageView(CompanyRequiredMixin, AdminRequiredMixin, DetailView):
-    model = Company
-    template_name = 'settings/subscription_manage.html'
-    context_object_name = 'company'
-
-    def get_object(self, queryset=None):
-        return self.company
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['equipment_usage'] = self.company.equipment.count()
-        context['user_usage'] = self.company.members.count()
-        return context
-
-
-class SubscriptionSelectView(CompanyRequiredMixin, AdminRequiredMixin, ListView):
-    model = SubscriptionPlan
-    template_name = 'settings/subscription_select.html'
-    context_object_name = 'plans'
-
-    def get_queryset(self):
-        return SubscriptionPlan.objects.all().order_by('price_monthly')
-
-
-class SubscriptionActivateView(CompanyRequiredMixin, AdminRequiredMixin, View):
-    def post(self, request, *args, **kwargs):
-        plan_id = request.POST.get('plan_id')
-        plan = get_object_or_404(SubscriptionPlan, id=plan_id)
-
-        is_free_plan = plan.price_monthly == 0 and plan.price_annually == 0
-
-        if is_free_plan:
-            services.activate_free_plan(self.company, plan)
-            logger.info(f"Для компании '{self.company.slug}' активирован бесплатный тариф '{plan.name}'. User ID: {request.user.id}")
-            messages.success(request, f"Бесплатный тариф '{plan.name}' успешно активирован!")
-            return redirect('qr_app:subscription_manage', company_slug=self.company.slug)
-        else:
-            period = request.POST.get('period')
-            try:
-                confirmation_url = services.create_yookassa_payment(self.company, plan, period, request)
-                return redirect(confirmation_url)
-            except ValueError as e:
-                messages.error(request, str(e))
-                return redirect('qr_app:subscription_select', company_slug=self.company.slug)
-            except Exception as e:
-                logger.error(f"Ошибка при создании платежа YooKassa для компании '{self.company.slug}': {e}", exc_info=True)
-                messages.error(request, "Произошла ошибка при создании платежа. Попробуйте позже.")
-                return redirect('qr_app:subscription_select', company_slug=self.company.slug)
-
-
-class CancelSubscriptionView(CompanyRequiredMixin, AdminRequiredMixin, View):
-    def post(self, request, *args, **kwargs):
-        self.company.auto_renew = False
-        self.company.save()
-        logger.info(f"User ID: {request.user.id} отключил автопродление для компании '{self.company.slug}'")
-        messages.success(request, "Автопродление подписки отменено. Доступ сохранится до конца оплаченного периода.")
-        return redirect('qr_app:subscription_manage', company_slug=self.company.slug)
-
-
-# --- Выбор компании и AJAX ---
 @login_required
 def select_company_view(request):
     memberships = Membership.objects.filter(user=request.user).select_related('company')
-    if not memberships.exists():
-        messages.info(request, "Вы пока не состоите ни в одной компании.")
+    if not memberships:
+        messages.info(request, 'You are not a member of any institution yet.')
         return redirect('register')
-    if memberships.count() == 1:
-        return redirect('qr_app:dashboard', company_slug=memberships.first().company.slug)
+    if len(memberships) == 1:
+        return redirect('qr_app:dashboard', company_slug=memberships[0].company.slug)
     return render(request, 'registration/select_company.html', {'memberships': memberships})
 
 
-class TemplateReorderFieldsView(CompanyRequiredMixin, AdminRequiredMixin, View):
+# --- Overview ----------------------------------------------------------------------------
+
+class DashboardView(CompanyView):
+    def get(self, request, *args, **kwargs):
+        services.sync_rule_followups(self.company)
+        tanks = list(self.tanks().with_dates())
+        pending = ServiceRecord.objects.filter(equipment__company=self.company, review_status=ReviewStatus.PENDING)
+        open_tasks = FollowUpTask.objects.filter(equipment__company=self.company, status=FollowUpTask.Status.OPEN)
+        my_tasks = open_tasks.filter(assigned_to=request.user).select_related('equipment')[:6]
+        my_events = ServiceRecord.objects.filter(equipment__company=self.company, author=request.user
+                                                 ).select_related('equipment')[:5]
+        return render(request, 'dashboards/overview.html', {
+            'tank_count': len(tanks),
+            'overdue_count': sum(t.needs_maintenance for t in tanks),
+            'due_soon_count': sum(t.maintenance_status == 'due_soon' for t in tanks),
+            'missing_report_count': sum(t.report_missing for t in tanks),
+            'pending_count': pending.count(),
+            'pending_no_evidence_count': pending.filter(photos__isnull=True).count(),
+            'open_task_count': open_tasks.count(),
+            'attention': [t for t in tanks if t.needs_maintenance or t.maintenance_status == 'due_soon'
+                          or t.report_missing][:8],
+            'my_tasks': my_tasks, 'my_events': my_events,
+            'activity': AuditEvent.objects.filter(company=self.company).select_related('actor')[:8],
+        })
+
+
+# --- Tanks -------------------------------------------------------------------------------
+
+class TankListView(CompanyView):
+    def get(self, request, *args, **kwargs):
+        qs = self.tanks().with_dates().select_related('responsible')
+        q = request.GET.get('q', '').strip()
+        if q:
+            qs = qs.filter(Q(tank_code__icontains=q) | Q(name__icontains=q) | Q(building__icontains=q))
+        building = request.GET.get('building', '')
+        if building:
+            qs = qs.filter(building=building)
+        tanks = list(qs)
+        status = request.GET.get('status', '')
+        if status == 'attention':
+            tanks = [t for t in tanks if t.needs_maintenance or t.report_missing]
+        elif status:
+            tanks = [t for t in tanks if t.maintenance_status == status]
+        buildings = self.tanks().exclude(building='').values_list('building', flat=True).distinct().order_by('building')
+        return render(request, 'tanks/tank_list.html', {
+            'tanks': tanks, 'q': q, 'status': status, 'building': building, 'buildings': buildings,
+            'total': self.tanks().count(),
+        })
+
+
+class TankFormView(CompanyRequiredMixin, AdminRequiredMixin, ActiveSubscriptionRequiredMixin, View):
+    def get_instance(self):
+        pk = self.kwargs.get('pk')
+        return get_object_or_404(Equipment, pk=pk, company=self.company) if pk else Equipment(company=self.company)
+
+    def render_form(self, form, instance):
+        return render(self.request, 'tanks/tank_form.html', {'form': form, 'tank': instance if instance.pk else None})
+
+    def get(self, request, *args, **kwargs):
+        instance = self.get_instance()
+        return self.render_form(TankForm(instance=instance, company=self.company), instance)
+
     def post(self, request, *args, **kwargs):
-        try:
-            template = get_object_or_404(EquipmentTemplate, pk=kwargs.get('pk'), company=self.company)
-            data = json.loads(request.body)
-            ordered_ids = data.get('ordered_ids')
-            purpose = data.get('purpose')
-            if not isinstance(ordered_ids, list) or purpose not in ['static', 'checklist']:
-                logger.error(f"Неверный AJAX-запрос на reorder_fields от User ID: {request.user.id}. Данные: {data}")
-                return JsonResponse({'status': 'error', 'message': 'Неверные данные.'}, status=400)
-            template.reorder_fields(ordered_ids, purpose)
-            logger.info(f"User ID: {request.user.id} изменил порядок полей ('{purpose}') для шаблона ID: {template.id}")
-            return JsonResponse({'status': 'ok', 'message': 'Порядок полей сохранен.'})
-        except json.JSONDecodeError:
-            logger.error(f"Ошибка декодирования JSON в reorder_fields от User ID: {request.user.id}. Тело запроса: {request.body}")
-            return JsonResponse({'status': 'error', 'message': 'Неверный формат JSON.'}, status=400)
-        except Exception as e:
-            logger.critical(f"Критическая ошибка в TemplateReorderFieldsView: {e}", exc_info=True)
-            return JsonResponse({'status': 'error', 'message': f'Внутренняя ошибка сервера: {e}'}, status=500)
+        instance = self.get_instance()
+        created = instance.pk is None
+        if created and settings.BILLING_ENABLED and self.company.subscription_plan and \
+                self.company.equipment.count() >= self.company.subscription_plan.max_equipment:
+            messages.error(request, 'Your plan\'s tank limit has been reached.')
+            return redirect('qr_app:tank_list', company_slug=self.company.slug)
+        form = TankForm(request.POST, instance=instance, company=self.company)
+        if not form.is_valid():
+            return self.render_form(form, instance)
+        tank = services.save_tank(form.save(commit=False), request.user, created)
+        messages.success(request, f"Tank {tank.tank_code} {'registered' if created else 'updated'}.")
+        return redirect('qr_app:tank_detail', company_slug=self.company.slug, pk=tank.pk)
 
 
-class TemplateRenameFieldView(CompanyRequiredMixin, AdminRequiredMixin, View):
-    def post(self, request, *args, **kwargs):
-        try:
-            template = get_object_or_404(EquipmentTemplate, pk=kwargs.get('pk'), company=self.company)
-            data = json.loads(request.body)
-            field_id = data.get('field_id')
-            new_name = data.get('new_name', '').strip()
-            if not field_id or not new_name:
-                logger.error(f"Неверный AJAX-запрос на rename_field от User ID: {request.user.id}. Данные: {data}")
-                return JsonResponse({'status': 'error', 'message': 'Неверные данные.'}, status=400)
-            success = template.rename_field(field_id, new_name)
-            if success:
-                logger.info(f"User ID: {request.user.id} переименовал поле ID: {field_id} в '{new_name}' для шаблона ID: {template.id}")
-                return JsonResponse({'status': 'ok', 'message': 'Поле переименовано.'})
-            else:
-                logger.error(f"User ID: {request.user.id} пытался переименовать несуществующее поле ID: {field_id} в шаблоне ID: {template.id}")
-                return JsonResponse({'status': 'error', 'message': 'Поле с таким ID не найдено.'}, status=404)
-        except json.JSONDecodeError:
-            logger.error(f"Ошибка декодирования JSON в rename_field от User ID: {request.user.id}. Тело запроса: {request.body}")
-            return JsonResponse({'status': 'error', 'message': 'Неверный формат JSON.'}, status=400)
-        except Exception as e:
-            logger.critical(f"Критическая ошибка в TemplateRenameFieldView: {e}", exc_info=True)
-            return JsonResponse({'status': 'error', 'message': f'Внутренняя ошибка сервера: {e}'}, status=500)
+class TankDetailView(CompanyView):
+    def get(self, request, pk, *args, **kwargs):
+        tank = self.get_tank(pk)
+        events = tank.records.select_related('author', 'reviewed_by').annotate(evidence_count=Count('photos'))
+        return render(request, 'tanks/tank_detail.html', {
+            'tank': tank, 'events': events,
+            'reports': tank.reports.select_related('uploaded_by', 'reviewed_by'),
+            'followups': tank.followups.select_related('assigned_to').filter(status=FollowUpTask.Status.OPEN),
+            'public_url': request.build_absolute_uri(reverse('public_tank_status', args=[tank.public_token])),
+        })
 
 
-@login_required
-def serve_protected_media(request, company_slug, photo_id):
-    photo = get_object_or_404(
-        ServiceRecordPhoto.objects.select_related('record__equipment__company'),
-        pk=photo_id
-    )
-    user_companies = request.user.companies.all()
-    if photo.record.equipment.company not in user_companies:
-        logger.warning(
-            f"ОТКАЗ В ДОСТУПЕ: User ID: {request.user.id} пытался получить доступ к фото ID: {photo_id}, которое ему не принадлежит.")
-        return HttpResponseForbidden("У вас нет доступа к этому файлу.")
-    if not settings.DEBUG:
-        response = HttpResponse()
-        response['X-Accel-Redirect'] = f'/protected_media{photo.image.url}'
-        del response['Content-Type']
+class TankQRView(CompanyView):
+    def get(self, request, pk, *args, **kwargs):
+        tank = get_object_or_404(self.tanks(), pk=pk)
+        url = request.build_absolute_uri(reverse('public_tank_status', args=[tank.public_token]))
+        buffer = BytesIO()
+        qrcode.make(url, border=2).save(buffer, 'PNG')
+        response = HttpResponse(buffer.getvalue(), content_type='image/png')
+        if request.GET.get('download'):
+            response['Content-Disposition'] = f'attachment; filename="dhara-{tank.tank_code}.png"'
         return response
-    else:
-        return redirect(photo.image.url)
 
 
-# --- Системные View ---
-def home_redirect_view(request):
-    if request.user.is_authenticated:
-        return redirect('select_company')
-    return redirect('login')
+# --- Maintenance events ------------------------------------------------------------------
 
+class EventCreateView(CompanyView):
+    def get_amends(self, tank):
+        pk = self.request.GET.get('amends') or self.request.POST.get('amends')
+        return get_object_or_404(ServiceRecord, pk=pk, equipment=tank) if pk else None
+
+    def render_form(self, tank, form, amends):
+        return render(self.request, 'maintenance/event_form.html', {'tank': tank, 'form': form, 'amends': amends})
+
+    def get(self, request, pk, *args, **kwargs):
+        tank = self.get_tank(pk)
+        amends = self.get_amends(tank)
+        initial = {'event_type': amends.event_type, 'work_date': amends.work_date} if amends else {
+            'work_date': timezone.localdate()}
+        return self.render_form(tank, MaintenanceEventForm(initial=initial), amends)
+
+    def post(self, request, pk, *args, **kwargs):
+        tank = self.get_tank(pk)
+        amends = self.get_amends(tank)
+        form = MaintenanceEventForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return self.render_form(tank, form, amends)
+        data = {k: form.cleaned_data[k] for k in ('event_type', 'work_date', 'provider_name', 'notes')}
+        try:
+            record = run_storage_action(request, lambda: services.submit_event(
+                tank, request.user, data, form.evidence(), amends=amends))
+        except ValidationError as e:
+            flash_errors(request, e)
+            return self.render_form(tank, form, amends)
+        if record is None:
+            return self.render_form(tank, form, amends)
+        messages.success(request, 'Maintenance event submitted. It is now waiting for review.')
+        return self.go('event_detail', pk=record.pk)
+
+
+class EventDetailView(CompanyView):
+    def get(self, request, pk, *args, **kwargs):
+        event = self.get_event(pk)
+        can_review = (self.membership.is_admin and event.author_id != request.user.pk
+                      and event.review_status == ReviewStatus.PENDING)
+        can_respond = (event.review_status == ReviewStatus.CHANGES_REQUESTED
+                       and (event.author_id == request.user.pk or self.membership.is_admin))
+        return render(request, 'maintenance/event_detail.html', {
+            'event': event, 'tank': event.equipment,
+            'evidence': event.photos.select_related('uploaded_by'),
+            'amendments': event.amendments.all(),
+            'history': AuditEvent.objects.filter(company=self.company, target_type='servicerecord',
+                                                 target_id=str(event.pk)).select_related('actor'),
+            'can_review': can_review, 'review_form': ReviewForm() if can_review else None,
+            'can_respond': can_respond, 'respond_form': RespondForm() if can_respond else None,
+            'own_event_pending': event.author_id == request.user.pk and event.review_status == ReviewStatus.PENDING,
+        })
+
+
+class EventReviewView(CompanyRequiredMixin, AdminRequiredMixin, ActiveSubscriptionRequiredMixin, View):
+    def post(self, request, pk, *args, **kwargs):
+        event = get_object_or_404(ServiceRecord, pk=pk, equipment__company=self.company)
+        form = ReviewForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, 'Choose a review decision.')
+        else:
+            try:
+                services.review_event(event, request.user, form.cleaned_data['decision'], form.cleaned_data['notes'])
+                messages.success(request, 'Review decision recorded.')
+            except ValidationError as e:
+                flash_errors(request, e)
+        return redirect('qr_app:event_detail', company_slug=self.company.slug, pk=event.pk)
+
+
+class EventRespondView(CompanyView):
+    def post(self, request, pk, *args, **kwargs):
+        event = self.get_event(pk)
+        form = RespondForm(request.POST, request.FILES)
+        if not form.is_valid():
+            for errs in form.errors.values():
+                for e in errs:
+                    messages.error(request, e)
+        else:
+            try:
+                if run_storage_action(request, lambda: services.respond_to_changes(
+                        event, request.user, form.evidence(), form.cleaned_data['note'])):
+                    messages.success(request, 'Response sent. The event is back in the review queue.')
+            except ValidationError as e:
+                flash_errors(request, e)
+        return self.go('event_detail', pk=event.pk)
+
+
+class EvidenceVerifyView(CompanyView):
+    def post(self, request, pk, *args, **kwargs):
+        ev = get_object_or_404(ServiceRecordPhoto, pk=pk, record__equipment__company=self.company)
+        try:
+            ok = services.verify_digest(ev)
+        except Exception:
+            logger.exception('Digest verification could not read file %s', ev.pk)
+            messages.error(request, 'The stored file could not be read for verification.')
+        else:
+            (messages.success if ok else messages.error)(
+                request, f"SHA-256 {'matches' if ok else 'DOES NOT match'} the digest recorded at upload "
+                         f"for '{ev.original_name}'.")
+        return self.go('event_detail', pk=ev.record_id)
+
+
+class ReviewQueueView(CompanyRequiredMixin, AdminRequiredMixin, ActiveSubscriptionRequiredMixin, View):
+    def get(self, request, *args, **kwargs):
+        base = ServiceRecord.objects.filter(equipment__company=self.company).select_related('equipment', 'author')
+        return render(request, 'maintenance/review_queue.html', {
+            'pending': base.filter(review_status=ReviewStatus.PENDING).annotate(evidence_count=Count('photos'))
+                           .order_by('created_at'),
+            'waiting': base.filter(review_status=ReviewStatus.CHANGES_REQUESTED),
+            'recent': base.exclude(review_status__in=[ReviewStatus.PENDING, ReviewStatus.CHANGES_REQUESTED])
+                          .select_related('reviewed_by').order_by('-reviewed_at')[:10],
+        })
+
+
+# --- Water-quality reports ---------------------------------------------------------------
+
+class ReportListView(CompanyView):
+    def get(self, request, *args, **kwargs):
+        reports = WaterQualityReport.objects.filter(equipment__company=self.company).select_related(
+            'equipment', 'uploaded_by', 'reviewed_by')
+        tanks = list(self.tanks().with_dates())
+        return render(request, 'reports/report_list.html', {
+            'reports': reports,
+            'missing': [t for t in tanks if t.report_missing],
+            'no_policy': [t for t in tanks if not t.report_interval_days and not t.last_sample_date],
+        })
+
+
+class ReportCreateView(CompanyRequiredMixin, AdminRequiredMixin, ActiveSubscriptionRequiredMixin, View):
+    def get_tank(self):
+        return get_object_or_404(Equipment, pk=self.kwargs['pk'], company=self.company)
+
+    def get(self, request, *args, **kwargs):
+        return render(request, 'reports/report_form.html', {'tank': self.get_tank(), 'form': WaterQualityReportForm()})
+
+    def post(self, request, *args, **kwargs):
+        tank = self.get_tank()
+        form = WaterQualityReportForm(request.POST, request.FILES)
+        if form.is_valid():
+            data = {k: v for k, v in form.cleaned_data.items() if k != 'file'}
+            report = run_storage_action(request, lambda: services.upload_report(
+                tank, request.user, data, form.cleaned_data['file']))
+            if report:
+                messages.success(request, 'Water-quality report linked. It is marked as not yet reviewed.')
+                return redirect('qr_app:tank_detail', company_slug=self.company.slug, pk=tank.pk)
+        return render(request, 'reports/report_form.html', {'tank': tank, 'form': form})
+
+
+class ReportReviewView(CompanyRequiredMixin, AdminRequiredMixin, ActiveSubscriptionRequiredMixin, View):
+    def post(self, request, pk, *args, **kwargs):
+        report = get_object_or_404(WaterQualityReport, pk=pk, equipment__company=self.company)
+        try:
+            services.mark_report_reviewed(report, request.user)
+            messages.success(request, 'Report marked as reviewed by your institution.')
+        except ValidationError as e:
+            flash_errors(request, e)
+        return redirect('qr_app:tank_detail', company_slug=self.company.slug, pk=report.equipment_id)
+
+
+# --- Follow-ups --------------------------------------------------------------------------
+
+class FollowUpListView(CompanyView):
+    def get(self, request, *args, **kwargs):
+        services.sync_rule_followups(self.company)
+        tasks = FollowUpTask.objects.filter(equipment__company=self.company).select_related(
+            'equipment', 'assigned_to', 'resolved_by', 'related_event')
+        show = request.GET.get('show', 'open')
+        if show == 'mine':
+            tasks = tasks.filter(assigned_to=request.user, status=FollowUpTask.Status.OPEN)
+        elif show == 'resolved':
+            tasks = tasks.filter(status=FollowUpTask.Status.RESOLVED).order_by('-resolved_at')
+        else:
+            tasks = tasks.filter(status=FollowUpTask.Status.OPEN)
+        tasks = list(tasks)
+        if self.membership.is_admin:
+            for t in tasks:
+                t.assign_form = FollowUpAssignForm(company=self.company, auto_id=f'id_t{t.pk}_%s', initial={
+                    'assigned_to': t.assigned_to_id, 'due_date': t.due_date})
+        return render(request, 'followups/followup_list.html', {'tasks': tasks, 'show': show})
+
+
+class FollowUpAssignView(CompanyRequiredMixin, AdminRequiredMixin, ActiveSubscriptionRequiredMixin, View):
+    def post(self, request, pk, *args, **kwargs):
+        task = get_object_or_404(FollowUpTask, pk=pk, equipment__company=self.company, status=FollowUpTask.Status.OPEN)
+        form = FollowUpAssignForm(request.POST, company=self.company)
+        if form.is_valid():
+            services.update_followup(task, request.user, form.cleaned_data['assigned_to'], form.cleaned_data['due_date'])
+            messages.success(request, 'Follow-up updated.')
+        else:
+            messages.error(request, 'Choose a valid assignee and due date.')
+        return redirect('qr_app:followup_list', company_slug=self.company.slug)
+
+
+class FollowUpResolveView(CompanyView):
+    def post(self, request, pk, *args, **kwargs):
+        task = get_object_or_404(FollowUpTask, pk=pk, equipment__company=self.company)
+        form = ResolveForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, 'Describe how the task was resolved.')
+        else:
+            try:
+                services.resolve_followup(task, request.user, form.cleaned_data['notes'])
+                messages.success(request, 'Follow-up resolved.')
+            except ValidationError as e:
+                flash_errors(request, e)
+        return redirect(request.POST.get('next') or reverse('qr_app:followup_list',
+                                                              kwargs={'company_slug': self.company.slug}))
+
+
+# --- Private files -----------------------------------------------------------------------
+
+def _serve(stored_file, content_type, filename):
+    if settings.STORAGE_BACKEND == 's3':
+        return redirect(stored_file.url)  # short-lived presigned URL
+    response = FileResponse(stored_file.open('rb'), content_type=content_type or 'application/octet-stream')
+    response['Content-Disposition'] = f'inline; filename="{filename}"'
+    response['X-Content-Type-Options'] = 'nosniff'
+    response['Cache-Control'] = 'private, no-store'
+    return response
+
+
+class EvidenceFileView(CompanyView):
+    def get(self, request, pk, *args, **kwargs):
+        ev = get_object_or_404(ServiceRecordPhoto, pk=pk, record__equipment__company=self.company)
+        return _serve(ev.file, ev.content_type, f"evidence-{ev.pk}{ev.file.name[ev.file.name.rfind('.'):]}")
+
+
+class ReportFileView(CompanyView):
+    def get(self, request, pk, *args, **kwargs):
+        r = get_object_or_404(WaterQualityReport, pk=pk, equipment__company=self.company)
+        return _serve(r.file, r.content_type, f"report-{r.pk}{r.file.name[r.file.name.rfind('.'):]}")
+
+
+# --- Activity, team, settings ------------------------------------------------------------
+
+class ActivityHistoryView(CompanyRequiredMixin, AdminRequiredMixin, ListView):
+    template_name = 'dashboards/activity_list.html'
+    context_object_name = 'events'
+    paginate_by = 25
+
+    def get_queryset(self):
+        return AuditEvent.objects.filter(company=self.company).select_related('actor')
+
+
+class TeamManageView(CompanyRequiredMixin, AdminRequiredMixin, ActiveSubscriptionRequiredMixin, View):
+    def render_page(self, form):
+        return render(self.request, 'team/manage_team.html', {
+            'form': form,
+            'memberships': Membership.objects.filter(company=self.company).select_related('user').order_by('user__email'),
+            'invitations': Invitation.objects.filter(company=self.company),
+        })
+
+    def get(self, request, *args, **kwargs):
+        return self.render_page(InvitationForm())
+
+    def post(self, request, *args, **kwargs):
+        form = InvitationForm(request.POST)
+        if not form.is_valid():
+            return self.render_page(form)
+        email = form.cleaned_data['email'].lower()
+        if settings.BILLING_ENABLED and self.company.subscription_plan and (
+                self.company.members.count() + Invitation.objects.filter(company=self.company).count()
+                >= self.company.subscription_plan.max_users):
+            messages.error(request, 'Your plan\'s user limit has been reached.')
+            return self.render_page(form)
+        if self.company.members.filter(email__iexact=email).exists():
+            messages.error(request, f'{email} is already a member.')
+            return self.render_page(form)
+        invitation = form.save(commit=False)
+        invitation.email = email
+        invitation.company = self.company
+        invitation.token = secrets.token_urlsafe(32)
+        invitation.save()
+        services.audit(self.company, request.user, 'member.invited', invitation,
+                       f"Invited {email} as {invitation.get_role_display()}")
+        messages.success(request, f'Invitation created for {email}. Share the link below; it expires in 7 days.')
+        return redirect('qr_app:manage_team', company_slug=self.company.slug)
+
+
+class MemberRemoveView(CompanyRequiredMixin, AdminRequiredMixin, View):
+    def get_membership(self, pk):
+        return get_object_or_404(Membership.objects.select_related('user'), user_id=pk, company=self.company)
+
+    def get(self, request, pk, *args, **kwargs):
+        return render(request, 'team/member_confirm_delete.html', {'m': self.get_membership(pk)})
+
+    def post(self, request, pk, *args, **kwargs):
+        m = self.get_membership(pk)
+        if m.user_id == request.user.pk:
+            return HttpResponseForbidden('You cannot remove yourself.')
+        m.delete()
+        services.audit(self.company, request.user, 'member.removed', m.user, f"Removed {m.user.email} from the institution")
+        messages.success(request, f'{m.user.email} was removed. Their past records are kept.')
+        return redirect('qr_app:manage_team', company_slug=self.company.slug)
+
+
+class InvitationRevokeView(CompanyRequiredMixin, AdminRequiredMixin, View):
+    def post(self, request, pk, *args, **kwargs):
+        get_object_or_404(Invitation, pk=pk, company=self.company).delete()
+        messages.success(request, 'Invitation revoked.')
+        return redirect('qr_app:manage_team', company_slug=self.company.slug)
+
+
+class CompanySettingsView(CompanyRequiredMixin, AdminRequiredMixin, View):
+    def get(self, request, *args, **kwargs):
+        return render(request, 'settings/company_settings.html', {'form': CompanySettingsForm(instance=self.company)})
+
+    def post(self, request, *args, **kwargs):
+        form = CompanySettingsForm(request.POST, instance=self.company)
+        if form.is_valid():
+            form.save()
+            services.audit(self.company, request.user, 'institution.updated', self.company, 'Institution settings updated')
+            messages.success(request, 'Settings saved.')
+            return redirect('qr_app:company_settings', company_slug=self.company.slug)
+        return render(request, 'settings/company_settings.html', {'form': form})
+
+
+# --- System ------------------------------------------------------------------------------
 
 def custom_server_error_view(request, template_name='500.html'):
     error_id = uuid.uuid4()
-    logger.critical(f"Server Error (500), Error ID: {error_id}", exc_info=True)
+    logger.critical(f"Server error, id {error_id}")
     return render(request, template_name, {'error_id': error_id}, status=500)
 
 
-def test_500_error_view(request, company_slug):
-    raise Exception("Это тестовая 500 ошибка для проверки обработчика.")
+# --- Upstream QRInvent billing (disabled unless BILLING_ENABLED) -------------------------
+
+class BillingView(CompanyRequiredMixin, AdminRequiredMixin, BillingEnabledMixin, View):
+    pass
 
 
-class LandingPageView(TemplateView):
-    template_name = 'landing_page.html'
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['plans'] = SubscriptionPlan.objects.all().order_by('price_monthly')
-        context['is_user_authenticated'] = self.request.user.is_authenticated
-        return context
+class SubscriptionManageView(BillingView):
+    def get(self, request, *args, **kwargs):
+        return render(request, 'settings/subscription_manage.html', {
+            'company': self.company, 'equipment_usage': self.company.equipment.count(),
+            'user_usage': self.company.members.count()})
 
 
-class ActivityHistoryView(CompanyRequiredMixin, AdminRequiredMixin, ListView):
-    """Отображает полную, постраничную историю активности в компании."""
-    template_name = 'dashboards/activity_list.html'
-    context_object_name = 'activity_page'
-    paginate_by = 10
+class SubscriptionSelectView(BillingView):
+    def get(self, request, *args, **kwargs):
+        return render(request, 'settings/subscription_select.html',
+                      {'plans': SubscriptionPlan.objects.order_by('price_monthly')})
 
-    def get_queryset(self):
-        """
-        Создает единый, отсортированный QuerySet для всех типов активности,
-        используя UNION на уровне базы данных для максимальной производительности.
-        """
-        service_records_qs = ServiceRecord.objects.filter(
-            equipment__company=self.company
-        ).annotate(
-            item_type=Value('record', output_field=CharField()),
-            title=F('equipment__name'),
-            object_pk=F('equipment__pk'),
-            object_slug=F('equipment__slug')
-        ).values(
-            'created_at', 'item_type', 'title',
-            'author__username', 'object_pk', 'object_slug'
-        )
 
-        equipment_qs = Equipment.objects.filter(
-            company=self.company
-        ).annotate(
-            item_type=Value('equipment', output_field=CharField()),
-            title=F('name'),
-            author__username=Value('', output_field=CharField()),
-            object_pk=F('pk'),
-            object_slug=F('slug')
-        ).values(
-            'created_at', 'item_type', 'title',
-            'author__username', 'object_pk', 'object_slug'
-        )
+class SubscriptionActivateView(BillingView):
+    def post(self, request, *args, **kwargs):
+        plan = get_object_or_404(SubscriptionPlan, id=request.POST.get('plan_id'))
+        try:
+            if plan.price_monthly == 0 and plan.price_annually == 0:
+                services.activate_free_plan(self.company, plan)
+                messages.success(request, f"Free plan '{plan.name}' activated.")
+                return redirect('qr_app:subscription_manage', company_slug=self.company.slug)
+            return redirect(services.create_yookassa_payment(self.company, plan, request.POST.get('period'), request))
+        except ValueError as e:
+            messages.error(request, str(e))
+        except Exception:
+            logger.exception('YooKassa payment creation failed')
+            messages.error(request, 'The payment could not be created. Try again later.')
+        return redirect('qr_app:subscription_select', company_slug=self.company.slug)
 
-        activity_queryset = service_records_qs.union(equipment_qs).order_by('-created_at')
-        return activity_queryset
+
+class ToggleAutoRenewView(BillingView):
+    def post(self, request, *args, **kwargs):
+        self.company.auto_renew = not self.company.auto_renew
+        self.company.save()
+        return redirect('qr_app:subscription_manage', company_slug=self.company.slug)
+
+
+class CancelSubscriptionView(BillingView):
+    def post(self, request, *args, **kwargs):
+        self.company.auto_renew = False
+        self.company.save()
+        messages.success(request, 'Auto-renewal cancelled.')
+        return redirect('qr_app:subscription_manage', company_slug=self.company.slug)
+
+
+class PaymentResultView(BillingView):
+    def get(self, request, *args, **kwargs):
+        messages.info(request, 'Payment is being processed.')
+        return render(request, 'settings/payment_result.html', {'company': self.company})
+
+
+YOOKASSA_NETWORKS = [ipaddress.ip_network(n) for n in (
+    '185.71.76.0/27', '185.71.77.0/27', '77.75.153.0/25', '77.75.154.128/25', '2a02:5180::/32',
+    '77.75.156.11/32', '77.75.156.35/32')]
 
 
 @csrf_exempt
 def yookassa_webhook_view(request):
-    """Безопасный обработчик уведомлений от YooKassa."""
-    YOOKASSA_IPS = [
-        ipaddress.ip_network('185.71.76.0/27'), ipaddress.ip_network('185.71.77.0/27'),
-        ipaddress.ip_network('77.75.153.0/25'), ipaddress.ip_network('77.75.154.128/25'),
-        ipaddress.ip_network('2a02:5180::/32'), ipaddress.ip_address('77.75.156.11'),
-        ipaddress.ip_address('77.75.156.35'),
-    ]
-    client_ip_str = request.META.get('HTTP_X_REAL_IP') or request.META.get('REMOTE_ADDR')
-    if not client_ip_str:
-        logger.warning("YooKassa Webhook: Не удалось определить IP-адрес запроса.")
-        return HttpResponseForbidden("IP address not identified.")
+    """Upstream webhook. The payment status is always re-fetched from the YooKassa API using the
+    ID stored on our own Payment row, so a forged notification cannot mark a payment paid."""
+    if not settings.BILLING_ENABLED or request.method != 'POST':
+        raise Http404
     try:
-        client_ip = ipaddress.ip_address(client_ip_str)
-        if not any(client_ip in network for network in YOOKASSA_IPS):
-            logger.error(f"YooKassa Webhook: ЗАПРОС С НЕДОВЕРЕННОГО IP: {client_ip}")
-            return HttpResponseForbidden("Untrusted IP address.")
-        logger.info(f"YooKassa Webhook: Проверка IP пройдена. Запрос с доверенного IP: {client_ip}")
+        if not any(ipaddress.ip_address(request.META.get('REMOTE_ADDR', '')) in n for n in YOOKASSA_NETWORKS):
+            return HttpResponseForbidden()
     except ValueError:
-        logger.warning(f"YooKassa Webhook: Получен некорректный IP-адрес: {client_ip_str}")
-        return HttpResponseForbidden("Invalid IP address format.")
-
+        return HttpResponseForbidden()
     try:
-        event_json = json.loads(request.body)
-        notification_object = event_json.get('object')
+        obj = json.loads(request.body).get('object') or {}
     except (json.JSONDecodeError, AttributeError):
-        logger.error("YooKassa Webhook: Invalid JSON или тело запроса.")
         return HttpResponse(status=400)
-
-    if not notification_object:
+    payment = Payment.objects.filter(id=(obj.get('metadata') or {}).get('local_payment_id')).first() \
+        if (obj.get('metadata') or {}).get('local_payment_id') else None
+    if not payment or not payment.yookassa_payment_id:
         return HttpResponse(status=200)
-
-    local_payment_id = notification_object.get('metadata', {}).get('local_payment_id')
-    yookassa_payment_id = notification_object.get('id')
-    if not local_payment_id:
-        return HttpResponse(status=200)
-
-    try:
-        payment = Payment.objects.get(id=local_payment_id)
-    except Payment.DoesNotExist:
-        logger.error(f"YooKassa Webhook: Payment с ID {local_payment_id} не найден.")
-        return HttpResponse(status=200)
-
+    from yookassa import Configuration, Payment as YooKassaPayment
     try:
         Configuration.account_id = settings.YOOKASSA_SHOP_ID
         Configuration.secret_key = settings.YOOKASSA_SECRET_KEY
-        payment_info = YooKassaPayment.find_one(yookassa_payment_id)
-        actual_status = payment_info.status
-    except Exception as e:
-        logger.error(f"Не удалось получить статус платежа {yookassa_payment_id} от API YooKassa: {e}")
+        info = YooKassaPayment.find_one(payment.yookassa_payment_id)
+    except Exception:
+        logger.exception('YooKassa status lookup failed')
         return HttpResponse(status=500)
-
-    if actual_status == 'succeeded' and payment.status != 'succeeded':
-        services.process_successful_payment(payment, payment_info)
-        logger.info(f"Подписка для компании '{payment.company.slug}' успешно активирована/продлена. Платеж: {payment.id}")
-    elif payment.status != actual_status:
-        payment.status = actual_status
+    if info.status == 'succeeded' and str(info.amount.value) == str(payment.amount):
+        services.process_successful_payment(payment, info)
+    elif payment.status != info.status:
+        payment.status = info.status
         payment.save()
-        logger.info(f"Статус платежа {payment.id} обновлен на '{actual_status}'.")
-
     return HttpResponse(status=200)
-
-
-class PaymentResultView(CompanyRequiredMixin, AdminRequiredMixin, TemplateView):
-    template_name = 'settings/payment_result.html'
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['company'] = self.company
-        messages.info(self.request, "Платеж обрабатывается. Статус подписки обновится в течение минуты.")
-        return context
-
-
-class ToggleAutoRenewView(CompanyRequiredMixin, AdminRequiredMixin, View):
-    def post(self, request, *args, **kwargs):
-        self.company.auto_renew = not self.company.auto_renew
-        self.company.save()
-        status = "включено" if self.company.auto_renew else "отключено"
-        logger.info(f"User ID: {request.user.id} изменил статус автопродления на '{status}' для компании '{self.company.slug}'")
-        messages.success(request, f"Автопродление успешно {status}.")
-        return redirect('qr_app:subscription_manage', company_slug=self.company.slug)

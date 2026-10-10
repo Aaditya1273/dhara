@@ -1,21 +1,16 @@
 # qr_app/context_processors.py
-from .models import Company
+from django.conf import settings
+
+from .models import Membership
+
 
 def current_company(request):
-    # --- НАЧАЛО ИЗМЕНЕНИЙ ---
-    # Добавляем проверку, что request.resolver_match вообще существует.
-    # Это защищает от ошибок при рендеринге страниц 500/404/403.
-    if request.resolver_match and 'company_slug' in request.resolver_match.kwargs:
-        company_slug = request.resolver_match.kwargs['company_slug']
-        try:
-            # Используем .get() вместо прямого доступа к self.company,
-            # чтобы избежать лишних запросов, если компания уже была загружена.
-            if not hasattr(request, '_cached_company'):
-                 request._cached_company = Company.objects.get(slug=company_slug)
-            return {'company': request._cached_company}
-        except Company.DoesNotExist:
-            # Если slug неверный, просто возвращаем пустой словарь.
-            # Логика прав доступа во View все равно вернет 404.
-            return {}
-    # --- КОНЕЦ ИЗМЕНЕНИЙ ---
-    return {}
+    ctx = {'billing_enabled': settings.BILLING_ENABLED}
+    match = request.resolver_match
+    if not (match and 'company_slug' in match.kwargs and request.user.is_authenticated):
+        return ctx
+    membership = getattr(request, 'membership', None) or Membership.objects.filter(
+        user=request.user, company__slug=match.kwargs['company_slug']).select_related('company').first()
+    if membership:
+        ctx.update(company=membership.company, membership=membership)
+    return ctx

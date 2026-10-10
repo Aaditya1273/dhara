@@ -17,6 +17,9 @@ class Command(BaseCommand):
     help = 'Обрабатывает автоматическое продление подписок, которые истекают завтра.'
 
     def handle(self, *args, **options):
+        if not settings.BILLING_ENABLED:
+            self.stdout.write("BILLING_ENABLED is off; nothing to renew.")
+            return
         self.stdout.write("Начинаем процесс продления подписок...")
 
         Configuration.account_id = settings.YOOKASSA_SHOP_ID
