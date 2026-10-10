@@ -58,10 +58,57 @@
           <tr><td class="whitespace-nowrap">{{ o.measured_at|date:"d M Y, H:i" }}<div class="text-xs muted">entered {{ o.recorded_at|date:"d M H:i" }}</div></td>
             <td>{{ o.get_kind_display }}{% if o.sample_point %}<div class="text-xs muted">{{ o.sample_point }}</div>{% endif %}</td>
             <td class="whitespace-nowrap font-semibold">{{ o.value }} {% if o.kind == 'water_temp' %}°C{% else %}mg/L{% endif %}{% if o.entered_unit == '°F' %}<div class="text-xs muted font-normal">entered {{ o.entered_value }} °F</div>{% endif %}</td>
-            <td>{{ o.method|cut:"_"|title }}</td><td class="text-xs">{{ o.entered_by.email }}</td></tr>
+            <td>{{ o.method|cut:"_"|title }}</td><td class="text-xs">{% if o.device_id %}<span class="badge badge-info">sensor</span> {% endif %}{{ o.source }}{% if o.photo_sha256 %}<div class="mono" title="SHA-256 of the evidence photo">📷 {{ o.photo_sha256|truncatechars:14 }}</div>{% endif %}</td></tr>
         {% endfor %}</tbody></table></div>
       {% else %}
         <div class="empty"><strong>No field measurements yet</strong>Use <em>Record measurement</em> after a DPD chlorine test or a thermometer reading.</div>
+      {% endif %}
+    </section>
+
+
+    <section class="card" aria-labelledby="twin-h">
+      <div class="card-pad"><p class="eyebrow">Thermal twin — estimate from measured data</p><h2 id="twin-h" class="text-lg font-bold">Tank-water temperature forecast</h2>
+        <p class="text-sm muted">A heat-balance model fitted to this tank's own measured temperatures and the campus weather. It is shown only after it passes a held-out validation, and only up to the horizon it was validated for.</p>
+        {% if twin %}
+          <div class="mt-3 flex flex-wrap gap-2 items-center">
+            {% if twin.ok %}<span class="badge badge-good">Validated</span>{% elif twin.status == 'stale' %}<span class="badge badge-warn">Paused</span>{% else %}<span class="badge badge-neutral">Not validated</span>{% endif %}
+            <span class="text-sm">{{ twin.message }}</span>
+          </div>
+          {% if twin.params %}<p class="text-xs muted mt-2 mono">a={{ twin.params.0|floatformat:3 }} °C per kWh/m² · b={{ twin.params.1|floatformat:3 }} /h · c={{ twin.params.2|floatformat:3 }} °C/h · trained on {{ twin.n_train }} h, held out {{ twin.n_holdout }} h{% if twin.holdout_rmse %} · RMSE {{ twin.holdout_rmse|floatformat:2 }} °C{% endif %}{% if twin.air_range %} · calibrated air {{ twin.air_range.0|floatformat:0 }}–{{ twin.air_range.1|floatformat:0 }} °C{% endif %}</p>{% endif %}
+          {% if chart %}
+          <figure class="mt-4">
+            <svg viewBox="0 0 {{ chart.w }} {{ chart.h }}" class="w-full h-auto" role="img" aria-label="Measured tank-water temperature for the last 48 hours and the validated forecast with its approximate uncertainty band">
+              <line x1="{{ chart.pad }}" y1="{{ chart.y_lo }}" x2="{{ chart.w }}" y2="{{ chart.y_lo }}" stroke="#d9dcd7"/>
+              <text x="2" y="{{ chart.y_lo }}" font-size="10" fill="#5b6672">{{ chart.lo }}°</text>
+              <text x="2" y="{{ chart.y_hi }}" font-size="10" fill="#5b6672">{{ chart.hi }}°</text>
+              <polygon points="{{ chart.band }}" fill="#129694" fill-opacity="0.15"/>
+              <line x1="{{ chart.now_x }}" y1="{{ chart.y_hi }}" x2="{{ chart.now_x }}" y2="{{ chart.y_lo }}" stroke="#5b6672" stroke-dasharray="3 3"/>
+              <polyline points="{{ chart.measured }}" fill="none" stroke="#144b6e" stroke-width="2"/>
+              <polyline points="{{ chart.forecast }}" fill="none" stroke="#0e7c7b" stroke-width="2" stroke-dasharray="6 4"/>
+            </svg>
+            <figcaption class="text-xs muted flex flex-wrap gap-4 mt-1"><span><b style="color:#144b6e">━</b> measured (hourly mean)</span><span><b style="color:#0e7c7b">┅</b> forecast</span><span>shaded: ±1.96 × held-out RMSE (approximate)</span></figcaption>
+          </figure>
+          {% with peak=twin.forecast_max_in_range %}{% if peak %}<p class="text-sm mt-2">Forecast peak within calibrated range: <strong>{{ peak.0|floatformat:1 }} °C</strong> at {{ peak.1|date:"D H:i" }}.</p>{% endif %}{% endwith %}
+          {% if twin.any_extrapolated %}<p class="text-xs" style="color:var(--warn)">Some forecast hours have weather outside the calibrated range; they are excluded from the peak.</p>{% endif %}
+          {% endif %}
+        {% else %}
+          <p class="text-sm mt-3">{{ twin_note }}</p>
+        {% endif %}
+        <div class="flex flex-wrap gap-2 mt-4">
+          {% if membership.is_admin %}<a class="btn btn-ghost" href="{% url 'qr_app:sensor_create' company.slug tank.pk %}">Register temperature sensor</a>
+          <a class="btn btn-ghost" href="{% url 'qr_app:intervention_create' company.slug tank.pk %}">Log cooling intervention</a>{% endif %}
+        </div>
+        {% if sensors %}<p class="text-xs muted mt-3">Sensors: {% for d in sensors %}<span class="mono">{{ d.thing_name }}</span> ({% if d.last_seen_at %}last data {{ d.last_seen_at|timesince }} ago{% else %}no data yet{% endif %}){% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+      </div>
+      {% if effects %}
+      <div class="border-t" style="border-color:var(--line)">
+        <div class="card-pad pb-2"><h3 class="font-bold">Cooling interventions — measured effect</h3>
+          <p class="text-xs muted">Measured daily peak after the change, compared with what the pre-change model predicts for the same weather. Assumes nothing else changed (refill schedule, water use, sensor position).</p></div>
+        <table class="table"><tbody>{% for iv, ef in effects %}
+          <tr><td>{{ iv.get_kind_display }}<div class="text-xs muted">{{ iv.applied_at|date:"d M Y H:i" }}{% if iv.notes %} · {{ iv.notes }}{% endif %}</div></td>
+            <td class="text-sm">{% if ef.status == 'ok' %}<strong>{{ ef.mean_c|floatformat:1 }} °C</strong> daily peak vs predicted (95% CI {{ ef.ci.0|floatformat:1 }} to {{ ef.ci.1|floatformat:1 }}, {{ ef.days }} days) · {{ ef.degree_hours_avoided|floatformat:0 }} degree-hours above 30 °C avoided{% if ef.ci.1 >= 0 %}<div class="text-xs muted">The interval includes zero: no clear effect yet.</div>{% endif %}{% else %}<span class="muted">{{ ef.message }}</span>{% endif %}</td></tr>
+        {% endfor %}</tbody></table>
+      </div>
       {% endif %}
     </section>
 

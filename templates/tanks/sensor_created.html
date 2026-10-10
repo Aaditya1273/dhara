@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block title %}Sensor token · {{ device.thing_name }}{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <h1 class="text-3xl font-bold mb-2">Sensor {{ device.thing_name }} registered</h1>
+  <div class="notice notice-warning mb-4">Copy this token now. DHARA stores only its SHA-256 and cannot show it again.</div>
+  <div class="card card-pad grid gap-3">
+    <div class="field"><label for="tok">Device token</label><input id="tok" class="mono" readonly value="{{ token }}" onclick="this.select()"></div>
+    <div class="field"><label for="url">Ingest URL</label><input id="url" class="mono" readonly value="{{ ingest_url }}" onclick="this.select()"></div>
+    <p class="text-sm">Put both into <span class="mono">firmware/dhara_tank_probe/secrets.h</span>. For AWS IoT Core routing, see <span class="mono">deploy/aws/iot/README.md</span>.</p>
+  </div>
+  <a class="btn btn-ghost mt-4" href="{% url 'qr_app:tank_detail' company.slug tank.pk %}">Back to {{ tank.tank_code }}</a>
+</div>
+{% endblock %}

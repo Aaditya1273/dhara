@@ -16,6 +16,8 @@ urlpatterns = [
     path('tanks/<int:pk>/maintenance/new/', views.EventCreateView.as_view(), name='event_create'),
     path('tanks/<int:pk>/reports/new/', views.ReportCreateView.as_view(), name='report_create'),
     path('tanks/<int:pk>/measurements/new/', views.ObservationCreateView.as_view(), name='observation_create'),
+    path('tanks/<int:pk>/sensors/new/', views.SensorCreateView.as_view(), name='sensor_create'),
+    path('tanks/<int:pk>/interventions/new/', views.InterventionCreateView.as_view(), name='intervention_create'),
     path('test-priority/', views.TestPriorityView.as_view(), name='test_priority'),
 
     path('maintenance/<int:pk>/', views.EventDetailView.as_view(), name='event_detail'),

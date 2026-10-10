@@ -13,11 +13,15 @@ from django.urls import reverse
 from django.utils import timezone
 from PIL import Image
 
+import secrets
+from zoneinfo import ZoneInfo
+
 from . import priority as prio
+from . import twin as twin_model
 from . import weather
 from .models import (
-    AuditEvent, Company, Equipment, EvidenceKind, FollowUpTask, Membership, Payment, ReviewStatus,
-    ServiceRecord, ServiceRecordPhoto, SubscriptionPlan, TankObservation, WaterQualityReport,
+    AuditEvent, Company, Equipment, EvidenceKind, FollowUpTask, Membership, Payment, ReviewStatus, SensorDevice,
+    ServiceRecord, ServiceRecordPhoto, SubscriptionPlan, TankIntervention, TankObservation, WaterQualityReport,
 )
 
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
@@ -354,19 +358,138 @@ def validate_observation(kind, value, unit, method, measured_at, now=None) -> De
     return canonical
 
 
-def record_observation(tank, user, kind, value, unit, method, measured_at, sample_point='', notes=''):
+def record_observation(tank, user, kind, value, unit, method, measured_at, sample_point='', notes='', photo=None):
     require_member(user, tank.company)
     canonical = validate_observation(kind, value, unit, method, measured_at)
+    photo_meta = {}
+    if photo:
+        validate_upload(photo, IMAGE_TYPES)
+        photo_meta = {'photo': photo, 'photo_sha256': sha256_of(photo)}
     with transaction.atomic():
         obs = TankObservation.objects.create(
             equipment=tank, kind=kind, value=canonical, entered_value=Decimal(str(value)), entered_unit=unit,
-            method=method, measured_at=measured_at, entered_by=user, sample_point=sample_point, notes=notes)
+            method=method, measured_at=measured_at, entered_by=user, sample_point=sample_point, notes=notes,
+            **photo_meta)
         audit(tank.company, user, 'observation.recorded', obs,
               f"Recorded {obs.get_kind_display().lower()} {canonical} {TankObservation.CANONICAL_UNIT[kind]} "
               f"for {tank.tank_code}",
               tank=tank.pk, value=str(canonical), entered=f'{value} {unit}', method=method,
-              measured_at=measured_at.isoformat())
+              measured_at=measured_at.isoformat(), sha256=obs.photo_sha256 or None)
     return obs
+
+
+# --- Sensors ---------------------------------------------------------------------------------
+
+MAX_BATCH = 500
+
+
+def token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def register_sensor(tank, user, thing_name):
+    """Returns (device, token). The token is shown once; only its digest is stored."""
+    require_admin(user, tank.company)
+    token = secrets.token_urlsafe(32)
+    with transaction.atomic():
+        device = SensorDevice.objects.create(company=tank.company, equipment=tank, thing_name=thing_name,
+                                             token_sha256=token_digest(token))
+        audit(tank.company, user, 'sensor.registered', device, f"Registered sensor {thing_name} on {tank.tank_code}")
+    return device, token
+
+
+def authenticate_device(token):
+    if not token:
+        return None
+    return SensorDevice.objects.select_related('equipment', 'company').filter(
+        token_sha256=token_digest(token), active=True).first()
+
+
+def ingest_readings(device, readings, now=None):
+    """readings: [{'measured_at': ISO-8601 with offset, 'water_temp_c': float}]. Validates each reading
+    like a manual one; duplicates (same device and timestamp) are skipped. Returns (created, duplicates, errors)."""
+    from datetime import datetime
+    now = now or timezone.now()
+    if not isinstance(readings, list) or not readings:
+        raise ValidationError('Send a non-empty "readings" list.')
+    if len(readings) > MAX_BATCH:
+        raise ValidationError(f'At most {MAX_BATCH} readings per request.')
+    created, dupes, errors, rows = 0, 0, [], []
+    for i, r in enumerate(readings):
+        try:
+            measured_at = datetime.fromisoformat(str(r['measured_at']))
+            if measured_at.tzinfo is None:
+                raise ValueError('measured_at needs a UTC offset')
+            value = Decimal(str(r['water_temp_c']))
+            canonical = validate_observation(TankObservation.Kind.WATER_TEMP, value, '°C', 'probe', measured_at, now)
+            rows.append((measured_at, value, canonical))
+        except (KeyError, TypeError, ValueError, ArithmeticError) as e:
+            errors.append(f'#{i}: {e}')
+        except ValidationError as e:
+            errors.append(f'#{i}: {" ".join(e.messages)}')
+    with transaction.atomic():
+        for measured_at, value, canonical in rows:
+            _, made = TankObservation.objects.get_or_create(
+                device=device, kind=TankObservation.Kind.WATER_TEMP, measured_at=measured_at,
+                defaults=dict(equipment=device.equipment, value=canonical, entered_value=value, entered_unit='°C',
+                              method='probe', sample_point='in-tank probe'))
+            created += made
+            dupes += not made
+        device.last_seen_at = now
+        device.save(update_fields=['last_seen_at'])
+        if created:
+            audit(device.company, None, 'sensor.ingested', device,
+                  f"Sensor {device.thing_name} sent {created} reading{'s' if created != 1 else ''} "
+                  f"for {device.equipment.tank_code}", created=created, duplicates=dupes, rejected=len(errors))
+    return created, dupes, errors
+
+
+# --- Thermal twin and interventions -----------------------------------------------------------
+
+def _twin_inputs(tank, since):
+    readings = list(tank.observations.filter(kind=TankObservation.Kind.WATER_TEMP, measured_at__gte=since)
+                    .order_by('measured_at').values_list('measured_at', 'value'))
+    return [(dt, float(v)) for dt, v in readings]
+
+
+def tank_twin(tank, now=None, hourly=None):
+    """Calibrate, validate and (if valid) forecast. Returns (TwinResult or None, Hourly)."""
+    now = now or timezone.now()
+    cfg = settings.DHARA_TWIN
+    if hourly is None:
+        hourly = weather.fetch_hourly(tank.company.latitude, tank.company.longitude, cfg['PAST_DAYS'], 3)
+    if not hourly.available:
+        return None, hourly
+    tz = ZoneInfo(settings.TIME_ZONE)
+    readings = _twin_inputs(tank, now - timedelta(days=cfg['PAST_DAYS']))
+    tcfg = twin_model.TwinConfig(cfg['MIN_TRAIN_STEPS'], cfg['MIN_HOLDOUT_STEPS'], cfg['MAX_HOLDOUT_MAE_C'])
+    result = twin_model.calibrate(readings, hourly.rows, tz, tcfg)
+    return twin_model.forecast(result, readings, hourly.rows, tz, now, 72, tcfg), hourly
+
+
+def record_intervention(tank, user, kind, applied_at, notes=''):
+    require_admin(user, tank.company)
+    if applied_at > timezone.now() + CLOCK_SKEW:
+        raise ValidationError('The intervention time cannot be in the future.')
+    with transaction.atomic():
+        iv = TankIntervention.objects.create(equipment=tank, kind=kind, applied_at=applied_at, notes=notes,
+                                             entered_by=user)
+        audit(tank.company, user, 'intervention.recorded', iv,
+              f"Recorded {iv.get_kind_display().lower()} on {tank.tank_code}", applied_at=applied_at.isoformat())
+    return iv
+
+
+def intervention_effect(iv, hourly=None):
+    cfg = settings.DHARA_TWIN
+    tank = iv.equipment
+    if hourly is None:
+        hourly = weather.fetch_hourly(tank.company.latitude, tank.company.longitude, cfg['PAST_DAYS'], 1)
+    if not hourly.available:
+        return twin_model.Effect('no_weather', hourly.error)
+    tcfg = twin_model.TwinConfig(cfg['MIN_TRAIN_STEPS'], cfg['MIN_HOLDOUT_STEPS'], cfg['MAX_HOLDOUT_MAE_C'])
+    readings = _twin_inputs(tank, iv.applied_at - timedelta(days=cfg['PAST_DAYS']))
+    return twin_model.intervention_effect(readings, hourly.rows, ZoneInfo(settings.TIME_ZONE), iv.applied_at,
+                                          cfg['DEGREE_HOUR_THRESHOLD_C'], tcfg)
 
 
 def latest_readings(tank):
@@ -377,15 +500,20 @@ def latest_readings(tank):
     return out
 
 
-def compute_priorities(company, forecast=None, now=None):
+def compute_priorities(company, forecast=None, now=None, hourly=None):
     """Returns (forecast, [(tank, Priority)]) sorted most urgent first."""
     now = now or timezone.now()
     if forecast is None:
         forecast = weather.fetch(company.latitude, company.longitude)
     rows = []
-    for tank in Equipment.objects.filter(company=company).select_related('responsible'):
+    tanks = Equipment.objects.filter(company=company).select_related('responsible', 'company')
+    for tank in tanks:
         r = latest_readings(tank)
-        p = prio.evaluate(tank, r['free_chlorine'], r['water_temp'], forecast, settings.DHARA_PRIORITY, now)
+        twin = None
+        if tank.sensors.exists():
+            twin, hourly = tank_twin(tank, now, hourly)
+        p = prio.evaluate(tank, r['free_chlorine'], r['water_temp'], forecast, settings.DHARA_PRIORITY, now,
+                          water_forecast=twin)
         rows.append((tank, p))
     rows.sort(key=lambda tp: (tp[1].rank, tp[0].tank_code))
     return forecast, rows

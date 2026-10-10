@@ -27,12 +27,12 @@ from django.views.generic import ListView, TemplateView
 from . import services
 from .forms import (
     CompanySettingsForm, FollowUpAssignForm, InvitationForm, InvitedUserRegistrationForm, MaintenanceEventForm,
-    ObservationForm, ResolveForm, RespondForm, ReviewForm, TankForm, UserRegistrationForm, WaterQualityReportForm,
+    InterventionForm, ObservationForm, ResolveForm, SensorForm, RespondForm, ReviewForm, TankForm, UserRegistrationForm, WaterQualityReportForm,
 )
 from .mixins import ActiveSubscriptionRequiredMixin, AdminRequiredMixin, BillingEnabledMixin, CompanyRequiredMixin
 from .models import (
     AuditEvent, Company, Equipment, FollowUpTask, Invitation, Membership, Payment, ReviewStatus, Role,
-    ServiceRecord, ServiceRecordPhoto, SubscriptionPlan, TankObservation, User, WaterQualityReport,
+    ServiceRecord, ServiceRecordPhoto, SubscriptionPlan, TankIntervention, TankObservation, User, WaterQualityReport,
 )
 
 logger = logging.getLogger(__name__)
@@ -244,9 +244,20 @@ class TankDetailView(CompanyView):
             'reports': tank.reports.select_related('uploaded_by', 'reviewed_by'),
             'followups': tank.followups.select_related('assigned_to').filter(status=FollowUpTask.Status.OPEN),
             'public_url': request.build_absolute_uri(reverse('public_tank_status', args=[tank.public_token])),
-            'observations': tank.observations.select_related('entered_by')[:20],
+            'observations': tank.observations.select_related('entered_by', 'device')[:20],
             'latest': services.latest_readings(tank),
+            'sensors': tank.sensors.all(),
+            **self.twin_context(tank),
         })
+
+    def twin_context(self, tank):
+        if not tank.sensors.exists() and not tank.observations.filter(kind='water_temp').exists():
+            return {'twin': None, 'twin_note': 'No water-temperature data yet.'}
+        twin, hourly = services.tank_twin(tank)
+        effects = [(iv, services.intervention_effect(iv, hourly if hourly.available else None))
+                   for iv in tank.interventions.select_related('entered_by')]
+        return {'twin': twin, 'twin_note': '' if twin else hourly.error, 'effects': effects,
+                'chart': twin_chart(tank, twin) if twin and twin.forecast else None}
 
 
 class TankQRView(CompanyView):
@@ -278,15 +289,120 @@ class ObservationCreateView(CompanyView):
 
     def post(self, request, pk, *args, **kwargs):
         tank = self.get_tank(pk)
-        form = ObservationForm(request.POST)
+        form = ObservationForm(request.POST, request.FILES)
         if not form.is_valid():
             return self.render_form(tank, form)
         cd = form.cleaned_data
-        obs = services.record_observation(tank, request.user, cd['kind'], cd['entered_value'], cd['entered_unit'],
-                                          cd['method'], cd['measured_at'], cd['sample_point'], cd['notes'])
+        obs = run_storage_action(request, lambda: services.record_observation(
+            tank, request.user, cd['kind'], cd['entered_value'], cd['entered_unit'], cd['method'],
+            cd['measured_at'], cd['sample_point'], cd['notes'], cd.get('photo')))
+        if obs is None:
+            return self.render_form(tank, form)
         messages.success(request, f"Recorded {obs.get_kind_display().lower()}: {obs.value} "
                                   f"{TankObservation.CANONICAL_UNIT[obs.kind]}.")
         return redirect('qr_app:tank_detail', company_slug=self.company.slug, pk=tank.pk)
+
+
+def twin_chart(tank, twin, width=640, height=200, pad=28):
+    """Inline-SVG coordinates: last 48 h measured (hourly means) + forecast with its approximate band."""
+    from zoneinfo import ZoneInfo
+    from .twin import hourly_means
+    tz = ZoneInfo(settings.TIME_ZONE)
+    since = twin.forecast[0][0] - timedelta(hours=49)
+    measured = sorted(hourly_means(tank.observations.filter(kind='water_temp', measured_at__gte=since)
+                                   .values_list('measured_at', 'value'), tz).items())
+    fc = twin.forecast
+    times = [h for h, _ in measured] + [f[0] for f in fc]
+    temps = [t for _, t in measured] + [f[2] for f in fc] + [f[3] for f in fc]
+    t0, t1 = min(times), max(times)
+    lo, hi = min(temps) - 1, max(temps) + 1
+    span = max((t1 - t0).total_seconds(), 1)
+
+    def x(h):
+        return pad + (h - t0).total_seconds() / span * (width - 2 * pad)
+
+    def y(t):
+        return height - pad - (t - lo) / (hi - lo) * (height - 2 * pad)
+
+    pts = lambda pairs: ' '.join(f'{x(h):.1f},{y(t):.1f}' for h, t in pairs)
+    band = [(f[0], f[3]) for f in fc] + [(f[0], f[2]) for f in reversed(fc)]
+    return {'w': width, 'h': height, 'measured': pts(measured), 'forecast': pts([(f[0], f[1]) for f in fc]),
+            'band': pts(band), 'now_x': f'{x(fc[0][0]):.1f}', 'lo': f'{lo:.0f}', 'hi': f'{hi:.0f}',
+            'y_lo': f'{height - pad:.0f}', 'y_hi': f'{pad:.0f}', 'pad': pad}
+
+
+class SensorCreateView(CompanyRequiredMixin, AdminRequiredMixin, ActiveSubscriptionRequiredMixin, View):
+    def get_tank(self):
+        return get_object_or_404(Equipment, pk=self.kwargs['pk'], company=self.company)
+
+    def get(self, request, *args, **kwargs):
+        return render(request, 'tanks/sensor_form.html', {'tank': self.get_tank(), 'form': SensorForm()})
+
+    def post(self, request, *args, **kwargs):
+        tank = self.get_tank()
+        form = SensorForm(request.POST)
+        if not form.is_valid():
+            return render(request, 'tanks/sensor_form.html', {'tank': tank, 'form': form})
+        device, token = services.register_sensor(tank, request.user, form.cleaned_data['thing_name'])
+        # Rendered directly (never redirected or stored in a message) so the token is shown exactly once.
+        response = render(request, 'tanks/sensor_created.html', {
+            'tank': tank, 'device': device, 'token': token,
+            'ingest_url': request.build_absolute_uri(reverse('sensor_ingest'))})
+        response['Cache-Control'] = 'no-store'
+        return response
+
+
+class InterventionCreateView(CompanyRequiredMixin, AdminRequiredMixin, ActiveSubscriptionRequiredMixin, View):
+    def get_tank(self):
+        return get_object_or_404(Equipment, pk=self.kwargs['pk'], company=self.company)
+
+    def get(self, request, *args, **kwargs):
+        return render(request, 'tanks/intervention_form.html', {'tank': self.get_tank(), 'form': InterventionForm()})
+
+    def post(self, request, *args, **kwargs):
+        tank = self.get_tank()
+        form = InterventionForm(request.POST)
+        if form.is_valid():
+            try:
+                services.record_intervention(tank, request.user, **form.cleaned_data)
+                messages.success(request, 'Intervention recorded. Its effect will be estimated once enough '
+                                          'measured days exist on both sides.')
+                return redirect('qr_app:tank_detail', company_slug=self.company.slug, pk=tank.pk)
+            except ValidationError as e:
+                form.add_error(None, e)
+        return render(request, 'tanks/intervention_form.html', {'tank': tank, 'form': form})
+
+
+@csrf_exempt
+def sensor_ingest(request):
+    """POST JSON {"readings": [{"measured_at": "...+05:30", "water_temp_c": 31.2}], "token": "..."}
+    Token may instead be sent as `Authorization: Bearer <token>`. Also answers AWS IoT Core's one-time
+    HTTPS destination confirmation request."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    if len(request.body) > 256 * 1024:
+        return JsonResponse({'error': 'payload too large'}, status=413)
+    try:
+        body = json.loads(request.body)
+        if not isinstance(body, dict):
+            raise ValueError
+    except ValueError:
+        return JsonResponse({'error': 'invalid JSON'}, status=400)
+    if 'confirmationToken' in body and 'enableUrl' in body:
+        logger.warning('AWS IoT destination confirmation received. Confirm it in the AWS IoT console with '
+                       'token %s (enable URL %s).', body['confirmationToken'], body['enableUrl'])
+        return JsonResponse({'status': 'confirmation logged'})
+    auth = request.headers.get('Authorization', '')
+    token = auth[7:] if auth.startswith('Bearer ') else body.get('token')
+    device = services.authenticate_device(token)
+    if device is None:
+        return JsonResponse({'error': 'unknown or inactive device token'}, status=401)
+    try:
+        created, dupes, errors = services.ingest_readings(device, body.get('readings'))
+    except ValidationError as e:
+        return JsonResponse({'error': ' '.join(e.messages)}, status=400)
+    return JsonResponse({'created': created, 'duplicates': dupes, 'rejected': errors},
+                        status=200 if created or dupes or not errors else 400)
 
 
 class TestPriorityView(CompanyView):

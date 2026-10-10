@@ -23,7 +23,7 @@ DUE_SOON_DAYS = 14
 
 # Top-level URL segments that a company slug must never shadow (see project_qr/urls.py).
 RESERVED_SLUGS = {
-    'register', 'login', 'logout', 'invitations', 'select-company', 'qr', 'healthz',
+    'register', 'login', 'logout', 'invitations', 'select-company', 'qr', 'healthz', 'api',
     'yookassa', 'super-secret-control-panel', 'static', 'media', 'admin',
 }
 
@@ -396,6 +396,25 @@ class FollowUpTask(models.Model):
         return self.status == self.Status.OPEN and self.due_date < timezone.localdate()
 
 
+class SensorDevice(models.Model):
+    """A temperature logger installed in a tank. Authenticates with a secret token; only its SHA-256 is stored."""
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='sensors')
+    equipment = models.ForeignKey(Equipment, on_delete=models.PROTECT, related_name='sensors', verbose_name='tank')
+    thing_name = models.SlugField(max_length=64, unique=True,
+                                  help_text='Device ID; also the AWS IoT thing name and MQTT topic segment.')
+    token_sha256 = models.CharField(max_length=64, unique=True, editable=False)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return self.thing_name
+
+
+def observation_photo_path(instance, filename):
+    return f"observations/{instance.equipment.company_id}/{uuid.uuid4().hex}{Path(filename).suffix.lower()}"
+
+
 class TankObservation(models.Model):
     """A field measurement taken at a tank (not a laboratory result). Values are stored in canonical
     units (°C, mg/L) alongside exactly what was entered."""
@@ -419,14 +438,27 @@ class TankObservation(models.Model):
     method = models.CharField(max_length=20)
     measured_at = models.DateTimeField(help_text='When the measurement was taken (as stated by the person).')
     recorded_at = models.DateTimeField(auto_now_add=True, help_text='When DHARA received it (server time).')
-    entered_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='+')
+    entered_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='+', null=True, blank=True)
+    device = models.ForeignKey(SensorDevice, on_delete=models.PROTECT, related_name='observations',
+                               null=True, blank=True)
     sample_point = models.CharField(max_length=120, blank=True, help_text='e.g. tank outlet, Block A tap.')
     notes = models.CharField(max_length=255, blank=True)
+    photo = models.FileField(upload_to=observation_photo_path, max_length=255, blank=True,
+                             help_text='Optional photo of the test strip or thermometer, kept as evidence.')
+    photo_sha256 = models.CharField(max_length=64, blank=True)
+
+    @property
+    def source(self):
+        return self.device.thing_name if self.device_id else (self.entered_by.email if self.entered_by_id else '')
 
     class Meta:
         ordering = ['-measured_at', '-id']
         indexes = [models.Index(fields=['equipment', 'kind', 'measured_at'])]
         constraints = [
+            models.CheckConstraint(name='observation_has_one_source', condition=(
+                Q(entered_by__isnull=False, device__isnull=True) | Q(entered_by__isnull=True, device__isnull=False))),
+            models.UniqueConstraint(fields=['device', 'kind', 'measured_at'], condition=Q(device__isnull=False),
+                                    name='unique_device_reading'),
             models.CheckConstraint(name='observation_value_in_range', condition=(
                 Q(kind='water_temp', value__gte=-5, value__lte=70) |
                 Q(kind='free_chlorine', value__gte=0, value__lte=10))),
@@ -434,6 +466,29 @@ class TankObservation(models.Model):
 
     def __str__(self):
         return f"{self.get_kind_display()} {self.value} {self.CANONICAL_UNIT[self.kind]} ({self.equipment.tank_code})"
+
+
+class TankIntervention(models.Model):
+    """A physical change meant to reduce heat gain. Its effect is estimated from measured data, never assumed."""
+    class Kind(models.TextChoices):
+        REFLECTIVE_PAINT = 'reflective_paint', 'Reflective / white paint'
+        SHADE = 'shade', 'Shade structure or net'
+        INSULATION = 'insulation', 'Insulation jacket'
+        RELOCATION = 'relocation', 'Relocated tank'
+        OTHER = 'other', 'Other'
+
+    equipment = models.ForeignKey(Equipment, on_delete=models.PROTECT, related_name='interventions', verbose_name='tank')
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    applied_at = models.DateTimeField(help_text='When the change was completed.')
+    notes = models.CharField(max_length=255, blank=True, help_text='Product, colour, cost, who did it.')
+    entered_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-applied_at']
+
+    def __str__(self):
+        return f"{self.get_kind_display()} on {self.equipment.tank_code}"
 
 
 class AuditEvent(models.Model):

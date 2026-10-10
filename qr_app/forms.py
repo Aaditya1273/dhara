@@ -6,7 +6,8 @@ from django.utils import timezone
 
 from . import services
 from .models import (
-    Company, Equipment, Invitation, ReviewStatus, ServiceRecord, TankObservation, User, WaterQualityReport,
+    Company, Equipment, Invitation, ReviewStatus, SensorDevice, ServiceRecord, TankIntervention, TankObservation,
+    User, WaterQualityReport,
 )
 
 DATE = forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d')
@@ -236,6 +237,14 @@ class ObservationForm(forms.Form):
     sample_point = forms.CharField(max_length=120, required=False, label='Sample point',
                                    help_text='e.g. tank outlet, Block A ground-floor tap.')
     notes = forms.CharField(max_length=255, required=False)
+    photo = forms.FileField(required=False, label='Photo of strip or thermometer',
+                            help_text='Optional JPG/PNG evidence. Stored privately with a SHA-256 digest.')
+
+    def clean_photo(self):
+        f = self.cleaned_data.get('photo')
+        if f:
+            services.validate_upload(f, services.IMAGE_TYPES)
+        return f
 
     def clean(self):
         cd = super().clean()
@@ -247,3 +256,22 @@ class ObservationForm(forms.Form):
         except ValidationError as e:
             raise ValidationError(e.messages)
         return cd
+
+
+class SensorForm(forms.Form):
+    thing_name = forms.SlugField(max_length=64, label='Device ID',
+                                 help_text='Lowercase letters, numbers and hyphens, e.g. dhara-tank-a-01. '
+                                           'Use the same name as the AWS IoT thing.')
+
+    def clean_thing_name(self):
+        name = self.cleaned_data['thing_name'].lower()
+        if SensorDevice.objects.filter(thing_name=name).exists():
+            raise ValidationError('This device ID is already registered.')
+        return name
+
+
+class InterventionForm(forms.Form):
+    kind = forms.ChoiceField(choices=TankIntervention.Kind.choices, label='Change made')
+    applied_at = forms.DateTimeField(label='Completed at', widget=forms.DateTimeInput(
+        attrs={'type': 'datetime-local'}, format='%Y-%m-%dT%H:%M'))
+    notes = forms.CharField(max_length=255, required=False, help_text='Product, colour, cost, who did it.')

@@ -750,3 +750,256 @@ class TestPriorityWorkflowTests(DharaTestCase):
             self.assertEqual(self.client.get(self.url(name)).status_code, 200)
         self.assertEqual(self.client.get(self.url('observation_create', self.tank.pk)).status_code, 200)
         self.assertContains(self.client.get(self.url('tank_detail', self.tank.pk)), 'not laboratory results')
+
+
+# --- Thermal twin, sensors and interventions -----------------------------------------------
+# All series below are SYNTHETIC TEST FIXTURES generated from known parameters, used only to check
+# that the maths recovers what was put in. They are never shown in the app or used in the demo.
+
+import random  # noqa: E402
+from zoneinfo import ZoneInfo  # noqa: E402
+
+from . import twin as tw  # noqa: E402
+from .models import SensorDevice, TankIntervention  # noqa: E402
+
+TZ = ZoneInfo('Asia/Kolkata')
+TRUE = (6.0, 0.12, -0.05)   # a (°C per kWh/m²), b (/h), c (°C/h)
+
+
+def synthetic_weather(start, hours, air_base=30.0, air_amp=6.0, solar_peak=0.8):
+    import math as m
+    w = {}
+    for k in range(hours):
+        h = start + timedelta(hours=k)
+        phase = (h.hour - 6) / 12 * m.pi
+        g = max(0.0, m.sin(phase)) * solar_peak
+        air = air_base + air_amp * m.sin((h.hour - 9) / 24 * 2 * m.pi)
+        w[h] = (air, g)
+    return w
+
+
+def synthetic_readings(start, hours, weather, params=TRUE, noise=0.1, seed=1, shift=None):
+    """Hourly readings from the model itself plus Gaussian noise; optional (from_hour, delta_a) change."""
+    rnd = random.Random(seed)
+    t, out = 28.0, []
+    for k in range(hours):
+        h = start + timedelta(hours=k)
+        out.append((h + timedelta(minutes=10), t + rnd.gauss(0, noise)))
+        p = params
+        if shift and h >= shift[0]:
+            p = (params[0] * shift[1], params[1], params[2])
+        air, g = weather[h]
+        t = tw.step(t, air, g, p)
+    return out
+
+
+START = datetime(2026, 5, 1, 0, 0, tzinfo=TZ)
+
+
+class TwinMathTests(unittest.TestCase):
+    def setUp(self):
+        self.w = synthetic_weather(START, 24 * 10)
+
+    def test_recovers_known_parameters_and_validates(self):
+        r = synthetic_readings(START, 24 * 6, self.w)
+        res = tw.calibrate(r, self.w, TZ)
+        self.assertTrue(res.ok, res.message)
+        for got, true in zip(res.params, TRUE):
+            self.assertAlmostEqual(got, true, delta=abs(true) * 0.15 + 0.05)
+        self.assertLess(res.holdout_mae, 0.5)
+        self.assertEqual(res.n_train + res.n_holdout, 24 * 6 - 1)
+
+    def test_insufficient_data(self):
+        res = tw.calibrate(synthetic_readings(START, 60, self.w), self.w, TZ)
+        self.assertEqual(res.status, 'insufficient')
+        sparse = synthetic_readings(START, 24 * 6, self.w)[::2]     # every other hour: no consecutive steps
+        self.assertEqual(tw.calibrate(sparse, self.w, TZ).status, 'insufficient')
+
+    def test_noise_fails_validation_or_plausibility(self):
+        rnd = random.Random(3)
+        junk = [(START + timedelta(hours=k, minutes=5), 30 + rnd.uniform(-8, 8)) for k in range(24 * 6)]
+        self.assertIn(tw.calibrate(junk, self.w, TZ).status, ('implausible', 'failed_validation'))
+
+    def test_validation_limit_is_enforced(self):
+        r = synthetic_readings(START, 24 * 6, self.w, noise=0.1)
+        res = tw.calibrate(r, self.w, TZ, tw.TwinConfig(max_holdout_mae_c=0.001))
+        self.assertEqual(res.status, 'failed_validation')
+        self.assertIsNotNone(res.holdout_mae)
+
+    def test_forecast_horizon_band_and_extrapolation(self):
+        r = synthetic_readings(START, 24 * 6, self.w)
+        hot_w = dict(self.w)
+        last = START + timedelta(hours=24 * 6 - 1)
+        for k in range(10, 20):           # make some future hours hotter than anything calibrated
+            h = last + timedelta(hours=k)
+            hot_w[h] = (60.0, hot_w[h][1])
+        res = tw.forecast(tw.calibrate(r, self.w, TZ), r, hot_w, TZ, now=last + timedelta(minutes=30))
+        self.assertTrue(res.ok)
+        self.assertLessEqual(len(res.forecast), res.validated_horizon_h)
+        self.assertTrue(all(lo < t < hi for _, t, lo, hi, _ in res.forecast))
+        self.assertTrue(res.any_extrapolated)
+        peak, when = res.forecast_max_in_range
+        self.assertTrue(all(not ext for h, t, *_, ext in res.forecast if h == when))
+
+    def test_stale_start_pauses_forecast(self):
+        r = synthetic_readings(START, 24 * 6, self.w)
+        res = tw.forecast(tw.calibrate(r, self.w, TZ), r, self.w, TZ, now=START + timedelta(days=8))
+        self.assertEqual(res.status, 'stale')
+        self.assertEqual(res.forecast, [])
+
+    def test_solve_singular(self):
+        self.assertIsNone(tw.solve3([[1, 2, 3], [2, 4, 6], [1, 1, 1]], [1, 2, 3]))
+
+    def test_t_critical(self):
+        self.assertEqual(tw.t_crit(1), 12.71)
+        self.assertEqual(tw.t_crit(11), 2.18)    # conservative: uses df=12 entry
+        self.assertEqual(tw.t_crit(500), 1.96)
+
+
+class InterventionEffectTests(unittest.TestCase):
+    def setUp(self):
+        self.w = synthetic_weather(START, 24 * 12)
+        self.applied = START + timedelta(days=7)
+
+    def test_detects_known_cooling(self):
+        r = synthetic_readings(START, 24 * 11, self.w, shift=(self.applied, 0.4), noise=0.05)  # 60% less solar gain
+        ef = tw.intervention_effect(r, self.w, TZ, self.applied)
+        self.assertEqual(ef.status, 'ok', ef.message)
+        self.assertLess(ef.ci[1], 0)          # whole interval below zero: cooler than predicted
+        self.assertGreater(ef.degree_hours_avoided, 0)
+
+    def test_no_change_interval_includes_zero(self):
+        r = synthetic_readings(START, 24 * 11, self.w, noise=0.05)
+        ef = tw.intervention_effect(r, self.w, TZ, self.applied)
+        self.assertEqual(ef.status, 'ok')
+        self.assertLessEqual(ef.ci[0], 0.3)
+        self.assertGreaterEqual(ef.ci[1], -0.3)
+
+    def test_needs_days_after(self):
+        r = synthetic_readings(START, 24 * 8, self.w)
+        self.assertEqual(tw.intervention_effect(r, self.w, TZ, self.applied).status, 'insufficient')
+
+
+class HourlyWeatherParseTests(unittest.TestCase):
+    def test_solar_is_shifted_to_interval_start(self):
+        payload = {'hourly': {'time': ['2026-05-01T11:00', '2026-05-01T12:00', '2026-05-01T13:00'],
+                              'temperature_2m': [30, 31, 32], 'shortwave_radiation': [500, 700, 650]}}
+        h = weather.parse_hourly(payload, TZ)
+        self.assertTrue(h.available)
+        k11 = datetime(2026, 5, 1, 11, tzinfo=TZ)
+        self.assertEqual(h.rows[k11], (30.0, 0.7))      # 12:00 value = mean over 11:00-12:00
+        self.assertNotIn(datetime(2026, 5, 1, 13, tzinfo=TZ), h.rows)  # no following hour
+        self.assertFalse(weather.parse_hourly({'hourly': {}}, TZ).available)
+
+
+class PriorityWithTwinTests(unittest.TestCase):
+    def test_validated_forecast_raises_heat_only_when_ok(self):
+        w = synthetic_weather(START, 24 * 8)
+        r = synthetic_readings(START, 24 * 6, w)
+        last = START + timedelta(hours=24 * 6 - 1)
+        res = tw.forecast(tw.calibrate(r, w, TZ), r, w, TZ, now=last)
+        cfg = dict(CFG, WATER_WARM_C=20.0)
+        fresh = prio.Reading(0.6, NOW - timedelta(hours=30))
+        p = prio.evaluate(tank_profile('rooftop', 'shaded'), fresh, None, NO_WX, cfg, NOW, water_forecast=res)
+        self.assertEqual(p.action, 'repeat')
+        self.assertIn('Thermal twin forecasts', ' '.join(p.context))
+        res.status = 'failed_validation'
+        p2 = prio.evaluate(tank_profile('rooftop', 'shaded'), fresh, None, NO_WX, cfg, NOW, water_forecast=res)
+        self.assertFalse(p2.actionable)
+
+
+class SensorIngestTests(DharaTestCase):
+    def setUp(self):
+        super().setUp()
+        self.device, self.token = services.register_sensor(self.tank, self.warden, 'dhara-test-01')
+
+    def post(self, body, token=None, header=True):
+        kw = {'HTTP_AUTHORIZATION': f'Bearer {token or self.token}'} if header else {}
+        return self.client.post(reverse('sensor_ingest'), data=json.dumps(body), content_type='application/json', **kw)
+
+    def reading(self, minutes_ago, value):
+        return {'measured_at': (timezone.now() - timedelta(minutes=minutes_ago)).isoformat(), 'water_temp_c': value}
+
+    def test_token_stored_as_digest_only(self):
+        self.assertNotEqual(self.device.token_sha256, self.token)
+        self.assertEqual(len(self.device.token_sha256), 64)
+        self.assertEqual(services.authenticate_device(self.token), self.device)
+        self.assertIsNone(services.authenticate_device('wrong'))
+
+    def test_ingest_validates_and_dedupes(self):
+        dup = self.reading(5, 32.0)
+        r = self.post({'readings': [self.reading(10, 31.5), dup, dict(dup),
+                                    self.reading(1, 99), {'measured_at': '2026-05-01T10:00', 'water_temp_c': 30}]})
+        data = r.json()
+        self.assertEqual((data['created'], data['duplicates'], len(data['rejected'])), (2, 1, 2))
+        obs = TankObservation.objects.filter(device=self.device)
+        self.assertEqual(obs.count(), 2)
+        self.assertTrue(all(o.entered_by_id is None and o.method == 'probe' for o in obs))
+        self.device.refresh_from_db()
+        self.assertIsNotNone(self.device.last_seen_at)
+        self.assertEqual(AuditEvent.objects.filter(action='sensor.ingested').count(), 1)
+
+    def test_token_in_body_for_iot_rule_forwarding(self):
+        r = self.post({'token': self.token, 'readings': [self.reading(3, 30.1)]}, header=False)
+        self.assertEqual(r.json()['created'], 1)
+
+    def test_auth_and_input_errors(self):
+        self.assertEqual(self.post({'readings': [self.reading(1, 30)]}, token='nope').status_code, 401)
+        self.device.active = False
+        self.device.save()
+        self.assertEqual(self.post({'readings': [self.reading(1, 30)]}).status_code, 401)
+        self.device.active = True
+        self.device.save()
+        self.assertEqual(self.post({'readings': []}).status_code, 400)
+        self.assertEqual(self.post({'readings': [self.reading(1, 30)] * 501}).status_code, 400)
+        r = self.client.post(reverse('sensor_ingest'), data='{bad', content_type='application/json')
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.client.get(reverse('sensor_ingest')).status_code, 405)
+
+    def test_aws_iot_destination_confirmation(self):
+        r = self.post({'confirmationToken': 'abc', 'enableUrl': 'https://iot.ap-south-1.amazonaws.com/x'}, header=False)
+        self.assertEqual(r.json()['status'], 'confirmation logged')
+
+    def test_register_sensor_page_shows_token_once(self):
+        self.login(self.warden)
+        r = self.client.post(self.url('sensor_create', self.tank.pk), {'thing_name': 'dhara-tank-a-02'})
+        self.assertEqual(r['Cache-Control'], 'no-store')
+        token = r.context['token']
+        self.assertContains(r, token)
+        self.assertNotContains(self.client.get(self.url('tank_detail', self.tank.pk)), token)
+        self.login(self.tech)
+        self.assertEqual(self.client.post(self.url('sensor_create', self.tank.pk),
+                                          {'thing_name': 'x-1'}).status_code, 403)
+
+    def test_db_requires_exactly_one_source(self):
+        from django.db import IntegrityError, transaction
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            TankObservation.objects.create(equipment=self.tank, kind='water_temp', value=30, entered_value=30,
+                                           entered_unit='°C', method='probe', measured_at=timezone.now(),
+                                           entered_by=self.tech, device=self.device)
+
+
+class ObservationPhotoAndInterventionTests(DharaTestCase):
+    def test_photo_evidence_digest(self):
+        self.login(self.tech)
+        r = self.client.post(self.url('observation_create', self.tank.pk), {
+            'kind': 'free_chlorine', 'entered_value': '0.4', 'entered_unit': 'mg/L', 'method': 'dpd_strip',
+            'measured_at': timezone.localtime().strftime('%Y-%m-%dT%H:%M'), 'photo': png('strip.png')})
+        self.assertEqual(r.status_code, 302)
+        obs = TankObservation.objects.get()
+        self.assertEqual(len(obs.photo_sha256), 64)
+        with obs.photo.open('rb') as fh:
+            import hashlib
+            self.assertEqual(hashlib.sha256(fh.read()).hexdigest(), obs.photo_sha256)
+
+    def test_intervention_admin_only_and_audited(self):
+        when = timezone.localtime().strftime('%Y-%m-%dT%H:%M')
+        self.login(self.tech)
+        self.assertEqual(self.client.post(self.url('intervention_create', self.tank.pk),
+                                          {'kind': 'shade', 'applied_at': when}).status_code, 403)
+        self.login(self.warden)
+        self.client.post(self.url('intervention_create', self.tank.pk), {'kind': 'reflective_paint', 'applied_at': when})
+        iv = TankIntervention.objects.get()
+        self.assertTrue(AuditEvent.objects.filter(action='intervention.recorded', target_id=str(iv.pk)).exists())
+        r = self.client.get(self.url('tank_detail', self.tank.pk))   # no location: twin explains, no crash
+        self.assertEqual(r.status_code, 200)

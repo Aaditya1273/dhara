@@ -12,6 +12,7 @@ admin.site.__class__ = OTPAdminSite
 urlpatterns = [
     path('super-secret-control-panel/', admin.site.urls),
     path('healthz/', views.healthz, name='healthz'),
+    path('api/sensors/ingest/', views.sensor_ingest, name='sensor_ingest'),
     path('yookassa/webhook/', views.yookassa_webhook_view, name='yookassa_webhook_global'),
     path('', views.LandingPageView.as_view(), name='landing_page'),
     path('qr/<str:token>/', views.public_tank_status, name='public_tank_status'),

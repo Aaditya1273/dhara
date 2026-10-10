@@ -188,3 +188,12 @@ DHARA_PRIORITY = {
 }
 OPEN_METEO_URL = os.getenv('OPEN_METEO_URL', 'https://api.open-meteo.com/v1/forecast')
 OPEN_METEO_TIMEOUT = env_float('OPEN_METEO_TIMEOUT', 5)
+
+# Thermal twin (qr_app/twin.py). A forecast is shown only if held-out error <= MAX_HOLDOUT_MAE_C.
+DHARA_TWIN = {
+    'PAST_DAYS': int(env_float('TWIN_PAST_DAYS', 30)),
+    'MIN_TRAIN_STEPS': int(env_float('TWIN_MIN_TRAIN_STEPS', 48)),
+    'MIN_HOLDOUT_STEPS': int(env_float('TWIN_MIN_HOLDOUT_STEPS', 24)),
+    'MAX_HOLDOUT_MAE_C': env_float('TWIN_MAX_HOLDOUT_MAE_C', 1.5),
+    'DEGREE_HOUR_THRESHOLD_C': env_float('TWIN_DEGREE_HOUR_THRESHOLD_C', 30),
+}

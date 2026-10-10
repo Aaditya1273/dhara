@@ -56,9 +56,11 @@ def hours_old(reading, now):
     return (now - reading.measured_at).total_seconds() / 3600
 
 
-def evaluate(tank, chlorine, water_temp, forecast, cfg, now):
+def evaluate(tank, chlorine, water_temp, forecast, cfg, now, water_forecast=None):
     """tank: object with sun_exposed, placement, shade. chlorine / water_temp: latest Reading or None.
-    forecast: weather.Forecast. cfg: settings.DHARA_PRIORITY."""
+    forecast: weather.Forecast. cfg: settings.DHARA_PRIORITY.
+    water_forecast: optional twin.TwinResult; used only if it passed held-out validation, and only for
+    forecast hours inside the calibrated weather range."""
     p = Priority()
     cl_min, cl_max = cfg['CHLORINE_MIN_MG_L'], cfg['CHLORINE_MAX_MG_L']
 
@@ -76,7 +78,15 @@ def evaluate(tank, chlorine, water_temp, forecast, cfg, now):
         p.context.append(f'Latest tank water temperature {water_temp.value:.1f} °C (≥ {cfg["WATER_WARM_C"]:g} °C).')
     if tank.sun_exposed:
         p.context.append('Thermal profile: above ground in full sun.')
-    heat = hot_forecast or warm_water
+    warm_forecast = False
+    if water_forecast is not None and water_forecast.ok and water_forecast.forecast_max_in_range:
+        peak, when = water_forecast.forecast_max_in_range
+        warm_forecast = peak >= cfg['WATER_WARM_C']
+        if warm_forecast:
+            p.context.append(f'Thermal twin forecasts tank water {peak:.1f} °C at {when:%a %H:%M} '
+                             f'(validated error ±{water_forecast.holdout_mae:.1f} °C) — '
+                             f'≥ {cfg["WATER_WARM_C"]:g} °C.')
+    heat = hot_forecast or warm_water or warm_forecast
 
     def set_(level, action, reason):
         p.level, p.action = level, action
