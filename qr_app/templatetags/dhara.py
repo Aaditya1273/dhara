@@ -25,6 +25,13 @@ BADGES = {
         'unreviewed': ('Uploaded, not yet reviewed', 'info'),
         'reviewed': ('Reviewed by institution', 'good'),
     },
+    'priority': {
+        'urgent': ('Urgent', 'bad'),
+        'high': ('High', 'warn'),
+        'medium': ('Medium', 'info'),
+        'low': ('Low', 'neutral'),
+        'none': ('No action', 'good'),
+    },
     'task': {
         'open': ('Open', 'warn'),
         'resolved': ('Resolved', 'good'),

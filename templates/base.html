@@ -24,7 +24,8 @@
       {% with u=request.resolver_match.url_name %}
       <nav class="hidden lg:flex items-center gap-1" aria-label="Main">
         <a class="nav-link {% if u == 'dashboard' %}active{% endif %}" href="{% url 'qr_app:dashboard' company.slug %}">Overview</a>
-        <a class="nav-link {% if 'tank' in u or 'event' in u or u == 'report_create' %}active{% endif %}" href="{% url 'qr_app:tank_list' company.slug %}">Tanks</a>
+        <a class="nav-link {% if 'tank' in u or 'event' in u or u == 'report_create' or u == 'observation_create' %}active{% endif %}" href="{% url 'qr_app:tank_list' company.slug %}">Tanks</a>
+        <a class="nav-link {% if u == 'test_priority' %}active{% endif %}" href="{% url 'qr_app:test_priority' company.slug %}">Test priority</a>
         {% if membership.is_admin %}<a class="nav-link {% if u == 'review_queue' %}active{% endif %}" href="{% url 'qr_app:review_queue' company.slug %}">Review queue</a>{% endif %}
         <a class="nav-link {% if u == 'report_list' %}active{% endif %}" href="{% url 'qr_app:report_list' company.slug %}">Water quality</a>
         <a class="nav-link {% if 'followup' in u %}active{% endif %}" href="{% url 'qr_app:followup_list' company.slug %}">Follow-ups</a>
@@ -57,6 +58,7 @@
     {% if company %}
       <a class="nav-link" href="{% url 'qr_app:dashboard' company.slug %}">Overview</a>
       <a class="nav-link" href="{% url 'qr_app:tank_list' company.slug %}">Tanks</a>
+      <a class="nav-link" href="{% url 'qr_app:test_priority' company.slug %}">Test priority</a>
       {% if membership.is_admin %}<a class="nav-link" href="{% url 'qr_app:review_queue' company.slug %}">Review queue</a>{% endif %}
       <a class="nav-link" href="{% url 'qr_app:report_list' company.slug %}">Water quality</a>
       <a class="nav-link" href="{% url 'qr_app:followup_list' company.slug %}">Follow-ups</a>

@@ -27,12 +27,12 @@ from django.views.generic import ListView, TemplateView
 from . import services
 from .forms import (
     CompanySettingsForm, FollowUpAssignForm, InvitationForm, InvitedUserRegistrationForm, MaintenanceEventForm,
-    ResolveForm, RespondForm, ReviewForm, TankForm, UserRegistrationForm, WaterQualityReportForm,
+    ObservationForm, ResolveForm, RespondForm, ReviewForm, TankForm, UserRegistrationForm, WaterQualityReportForm,
 )
 from .mixins import ActiveSubscriptionRequiredMixin, AdminRequiredMixin, BillingEnabledMixin, CompanyRequiredMixin
 from .models import (
     AuditEvent, Company, Equipment, FollowUpTask, Invitation, Membership, Payment, ReviewStatus, Role,
-    ServiceRecord, ServiceRecordPhoto, SubscriptionPlan, User, WaterQualityReport,
+    ServiceRecord, ServiceRecordPhoto, SubscriptionPlan, TankObservation, User, WaterQualityReport,
 )
 
 logger = logging.getLogger(__name__)
@@ -244,6 +244,8 @@ class TankDetailView(CompanyView):
             'reports': tank.reports.select_related('uploaded_by', 'reviewed_by'),
             'followups': tank.followups.select_related('assigned_to').filter(status=FollowUpTask.Status.OPEN),
             'public_url': request.build_absolute_uri(reverse('public_tank_status', args=[tank.public_token])),
+            'observations': tank.observations.select_related('entered_by')[:20],
+            'latest': services.latest_readings(tank),
         })
 
 
@@ -257,6 +259,51 @@ class TankQRView(CompanyView):
         if request.GET.get('download'):
             response['Content-Disposition'] = f'attachment; filename="dhara-{tank.tank_code}.png"'
         return response
+
+
+# --- Field measurements and Tank Test Priority -------------------------------------------
+
+class ObservationCreateView(CompanyView):
+    def render_form(self, tank, form):
+        return render(self.request, 'tanks/observation_form.html', {
+            'tank': tank, 'form': form, 'methods': TankObservation.METHODS, 'units': TankObservation.UNITS})
+
+    def get(self, request, pk, *args, **kwargs):
+        tank = self.get_tank(pk)
+        kind = request.GET.get('kind', TankObservation.Kind.FREE_CHLORINE)
+        initial = {'kind': kind, 'measured_at': timezone.localtime().replace(second=0, microsecond=0),
+                   'entered_unit': TankObservation.CANONICAL_UNIT.get(kind, 'mg/L'),
+                   'method': 'dpd_strip' if kind == 'free_chlorine' else 'thermometer'}
+        return self.render_form(tank, ObservationForm(initial=initial))
+
+    def post(self, request, pk, *args, **kwargs):
+        tank = self.get_tank(pk)
+        form = ObservationForm(request.POST)
+        if not form.is_valid():
+            return self.render_form(tank, form)
+        cd = form.cleaned_data
+        obs = services.record_observation(tank, request.user, cd['kind'], cd['entered_value'], cd['entered_unit'],
+                                          cd['method'], cd['measured_at'], cd['sample_point'], cd['notes'])
+        messages.success(request, f"Recorded {obs.get_kind_display().lower()}: {obs.value} "
+                                  f"{TankObservation.CANONICAL_UNIT[obs.kind]}.")
+        return redirect('qr_app:tank_detail', company_slug=self.company.slug, pk=tank.pk)
+
+
+class TestPriorityView(CompanyView):
+    def get(self, request, *args, **kwargs):
+        forecast, rows = services.compute_priorities(self.company)
+        created = services.sync_priority_followups(self.company, rows)
+        if created:
+            messages.info(request, f'{len(created)} new follow-up{"s" if len(created) != 1 else ""} opened '
+                                   'from test-priority rules.')
+        open_tasks = dict(FollowUpTask.objects.filter(
+            equipment__company=self.company, status=FollowUpTask.Status.OPEN,
+            kind=FollowUpTask.Kind.TEST_PRIORITY).values_list('equipment_id', 'pk'))
+        return render(request, 'tanks/test_priority.html', {
+            'forecast': forecast, 'rows': [(t, p, open_tasks.get(t.pk)) for t, p in rows],
+            'actionable_count': sum(p.actionable for _, p in rows),
+            'cfg': settings.DHARA_PRIORITY,
+        })
 
 
 # --- Maintenance events ------------------------------------------------------------------

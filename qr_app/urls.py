@@ -15,6 +15,8 @@ urlpatterns = [
     path('tanks/<int:pk>/qr.png', views.TankQRView.as_view(), name='tank_qr'),
     path('tanks/<int:pk>/maintenance/new/', views.EventCreateView.as_view(), name='event_create'),
     path('tanks/<int:pk>/reports/new/', views.ReportCreateView.as_view(), name='report_create'),
+    path('tanks/<int:pk>/measurements/new/', views.ObservationCreateView.as_view(), name='observation_create'),
+    path('test-priority/', views.TestPriorityView.as_view(), name='test_priority'),
 
     path('maintenance/<int:pk>/', views.EventDetailView.as_view(), name='event_detail'),
     path('maintenance/<int:pk>/review/', views.EventReviewView.as_view(), name='event_review'),

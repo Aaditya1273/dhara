@@ -11,6 +11,7 @@
   </div>
   <div class="flex flex-wrap gap-2">
     <a class="btn btn-teal" href="{% url 'qr_app:event_create' company.slug tank.pk %}">Record maintenance</a>
+    <a class="btn btn-ghost" href="{% url 'qr_app:observation_create' company.slug tank.pk %}">Record measurement</a>
     {% if membership.is_admin %}
       <a class="btn btn-ghost" href="{% url 'qr_app:report_create' company.slug tank.pk %}">Link water-quality report</a>
       <a class="btn btn-ghost" href="{% url 'qr_app:tank_update' company.slug tank.pk %}">Edit</a>
@@ -37,6 +38,30 @@
         {% endfor %}</tbody></table></div>
       {% else %}
         <div class="empty"><strong>No maintenance recorded yet</strong>Use <em>Record maintenance</em> after cleaning, disinfection, inspection or repair.</div>
+      {% endif %}
+    </section>
+
+
+    <section class="card" aria-labelledby="obs-h">
+      <div class="card-pad pb-2"><p class="eyebrow">Field measurements — not laboratory results</p><h2 id="obs-h" class="text-lg font-bold">Water temperature and free chlorine</h2>
+        <p class="text-sm muted">Readings taken at the tank with a thermometer or test kit. A free-chlorine reading shows disinfectant residual at that moment and point; it does not establish that the water is potable.</p>
+        <div class="grid sm:grid-cols-2 gap-3 mt-3">
+          <div class="border rounded-lg p-3" style="border-color:var(--line)"><p class="text-xs muted">Latest free chlorine</p>
+            {% if latest.free_chlorine %}<p class="text-xl font-bold">{{ latest.free_chlorine.value|floatformat:2 }} mg/L</p><p class="text-xs muted">{{ latest.free_chlorine.measured_at|date:"d M Y, H:i" }}</p>{% else %}<p class="text-sm">No reading on record</p>{% endif %}</div>
+          <div class="border rounded-lg p-3" style="border-color:var(--line)"><p class="text-xs muted">Latest tank water temperature</p>
+            {% if latest.water_temp %}<p class="text-xl font-bold">{{ latest.water_temp.value|floatformat:1 }} °C</p><p class="text-xs muted">{{ latest.water_temp.measured_at|date:"d M Y, H:i" }}</p>{% else %}<p class="text-sm">No reading on record</p>{% endif %}</div>
+        </div></div>
+      {% if observations %}
+      <div class="overflow-x-auto"><table class="table">
+        <thead><tr><th>Measured</th><th>Measurement</th><th>Value</th><th>Method</th><th>Entered by</th></tr></thead>
+        <tbody>{% for o in observations %}
+          <tr><td class="whitespace-nowrap">{{ o.measured_at|date:"d M Y, H:i" }}<div class="text-xs muted">entered {{ o.recorded_at|date:"d M H:i" }}</div></td>
+            <td>{{ o.get_kind_display }}{% if o.sample_point %}<div class="text-xs muted">{{ o.sample_point }}</div>{% endif %}</td>
+            <td class="whitespace-nowrap font-semibold">{{ o.value }} {% if o.kind == 'water_temp' %}°C{% else %}mg/L{% endif %}{% if o.entered_unit == '°F' %}<div class="text-xs muted font-normal">entered {{ o.entered_value }} °F</div>{% endif %}</td>
+            <td>{{ o.method|cut:"_"|title }}</td><td class="text-xs">{{ o.entered_by.email }}</td></tr>
+        {% endfor %}</tbody></table></div>
+      {% else %}
+        <div class="empty"><strong>No field measurements yet</strong>Use <em>Record measurement</em> after a DPD chlorine test or a thermometer reading.</div>
       {% endif %}
     </section>
 
@@ -80,6 +105,9 @@
         <div class="flex justify-between gap-2"><dt class="muted">Next due</dt><dd>{{ tank.next_due_date|date:"d M Y"|default:"Now" }}</dd></div>
         <div class="flex justify-between gap-2"><dt class="muted">Report expected</dt><dd>{% if tank.report_interval_days %}every {{ tank.report_interval_days }} days{% else %}No policy set{% endif %}</dd></div>
         <div class="flex justify-between gap-2"><dt class="muted">Responsible</dt><dd>{{ tank.responsible.email|default:"Unassigned" }}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">Placement</dt><dd>{{ tank.get_placement_display }}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">Sun exposure</dt><dd>{{ tank.get_shade_display }}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">Material</dt><dd>{{ tank.get_material_display }}</dd></div>
         <div class="flex justify-between gap-2"><dt class="muted">Capacity</dt><dd>{% if tank.capacity_litres %}{{ tank.capacity_litres }} L{% else %}—{% endif %}</dd></div>
       </dl>
     </section>

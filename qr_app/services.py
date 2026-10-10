@@ -3,6 +3,7 @@
 import hashlib
 import json
 from datetime import timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from django.conf import settings
@@ -12,9 +13,11 @@ from django.urls import reverse
 from django.utils import timezone
 from PIL import Image
 
+from . import priority as prio
+from . import weather
 from .models import (
     AuditEvent, Company, Equipment, EvidenceKind, FollowUpTask, Membership, Payment, ReviewStatus,
-    ServiceRecord, ServiceRecordPhoto, SubscriptionPlan, WaterQualityReport,
+    ServiceRecord, ServiceRecordPhoto, SubscriptionPlan, TankObservation, WaterQualityReport,
 )
 
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
@@ -313,6 +316,104 @@ def resolve_followup(task: FollowUpTask, user, notes: str):
         task.save()
         audit(company, user, 'followup.resolved', task, f"Resolved follow-up #{task.pk}", notes=task.resolution_notes)
     return task
+
+
+# --- Field measurements and Tank Test Priority ---------------------------------------------
+
+OBS_RANGE = {TankObservation.Kind.WATER_TEMP: (Decimal('-5'), Decimal('70')),
+             TankObservation.Kind.FREE_CHLORINE: (Decimal('0'), Decimal('10'))}
+MAX_BACKDATE = timedelta(days=30)
+CLOCK_SKEW = timedelta(minutes=5)
+
+
+def to_canonical(kind, value, unit) -> Decimal:
+    """°F -> °C; ppm -> mg/L (1:1 for dilute aqueous solutions). Rounded to 2 decimals."""
+    if unit not in TankObservation.UNITS.get(kind, []):
+        raise ValidationError(f"Unit '{unit}' is not valid for this measurement.")
+    value = Decimal(str(value))
+    if unit == '°F':
+        value = (value - 32) * 5 / 9
+    return value.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+
+def validate_observation(kind, value, unit, method, measured_at, now=None) -> Decimal:
+    now = now or timezone.now()
+    if kind not in TankObservation.Kind.values:
+        raise ValidationError('Unknown measurement type.')
+    if method not in dict(TankObservation.METHODS[kind]):
+        raise ValidationError('That method does not apply to this measurement type.')
+    canonical = to_canonical(kind, value, unit)
+    low, high = OBS_RANGE[kind]
+    if not low <= canonical <= high:
+        raise ValidationError(f'{canonical} {TankObservation.CANONICAL_UNIT[kind]} is outside the plausible range '
+                              f'{low}–{high}. Check the reading and unit.')
+    if measured_at > now + CLOCK_SKEW:
+        raise ValidationError('The measurement time cannot be in the future.')
+    if measured_at < now - MAX_BACKDATE:
+        raise ValidationError('Measurements older than 30 days cannot be entered.')
+    return canonical
+
+
+def record_observation(tank, user, kind, value, unit, method, measured_at, sample_point='', notes=''):
+    require_member(user, tank.company)
+    canonical = validate_observation(kind, value, unit, method, measured_at)
+    with transaction.atomic():
+        obs = TankObservation.objects.create(
+            equipment=tank, kind=kind, value=canonical, entered_value=Decimal(str(value)), entered_unit=unit,
+            method=method, measured_at=measured_at, entered_by=user, sample_point=sample_point, notes=notes)
+        audit(tank.company, user, 'observation.recorded', obs,
+              f"Recorded {obs.get_kind_display().lower()} {canonical} {TankObservation.CANONICAL_UNIT[kind]} "
+              f"for {tank.tank_code}",
+              tank=tank.pk, value=str(canonical), entered=f'{value} {unit}', method=method,
+              measured_at=measured_at.isoformat())
+    return obs
+
+
+def latest_readings(tank):
+    out = {}
+    for kind in TankObservation.Kind.values:
+        o = tank.observations.filter(kind=kind).order_by('-measured_at', '-id').first()
+        out[kind] = prio.Reading(float(o.value), o.measured_at, o.method) if o else None
+    return out
+
+
+def compute_priorities(company, forecast=None, now=None):
+    """Returns (forecast, [(tank, Priority)]) sorted most urgent first."""
+    now = now or timezone.now()
+    if forecast is None:
+        forecast = weather.fetch(company.latitude, company.longitude)
+    rows = []
+    for tank in Equipment.objects.filter(company=company).select_related('responsible'):
+        r = latest_readings(tank)
+        p = prio.evaluate(tank, r['free_chlorine'], r['water_temp'], forecast, settings.DHARA_PRIORITY, now)
+        rows.append((tank, p))
+    rows.sort(key=lambda tp: (tp[1].rank, tp[0].tank_code))
+    return forecast, rows
+
+
+def sync_priority_followups(company, rows, now=None):
+    """One open Test Priority follow-up per tank (DB-enforced). Existing open tasks are left for a
+    person to resolve; nothing is closed automatically."""
+    today = timezone.localdate(now)
+    open_tanks = set(FollowUpTask.objects.filter(
+        equipment__company=company, status=FollowUpTask.Status.OPEN, kind=FollowUpTask.Kind.TEST_PRIORITY,
+    ).values_list('equipment_id', flat=True))
+    created = []
+    for tank, p in rows:
+        if not p.actionable or tank.pk in open_tanks:
+            continue
+        title = f"{p.action_label} ({p.level}) for {tank.tank_code}: {p.reasons[0]}"[:200]
+        try:
+            with transaction.atomic():
+                task = FollowUpTask.objects.create(
+                    equipment=tank, kind=FollowUpTask.Kind.TEST_PRIORITY, title=title,
+                    due_date=today + prio.DUE_IN[p.level], assigned_to=tank.responsible)
+                audit(company, None, 'followup.created', task, f"Follow-up (test priority rule): {title}",
+                      level=p.level, priority_action=p.action, reasons=p.reasons, context=p.context)
+            created.append(task)
+        except IntegrityError:
+            pass
+    return created
 
 
 # --- Upstream QRInvent billing (only when settings.BILLING_ENABLED) -----------------------

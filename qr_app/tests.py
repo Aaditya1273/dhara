@@ -1,4 +1,5 @@
 # qr_app/tests.py
+import json
 import os
 import shutil
 import tempfile
@@ -483,3 +484,269 @@ class MockedS3Tests(DharaTestCase):
                 r = self.client.get(self.url('evidence_file', ev.pk))
                 self.assertEqual(r.status_code, 302)
                 self.assertIn('X-Amz-Signature', r.url)
+
+
+# --- Tank Test Priority -------------------------------------------------------------------
+
+from datetime import date, datetime  # noqa: E402
+from decimal import Decimal  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+import urllib.error  # noqa: E402
+
+from django.conf import settings as dj_settings  # noqa: E402
+from django.core.cache import cache  # noqa: E402
+
+from . import priority as prio  # noqa: E402
+from . import weather  # noqa: E402
+from .models import TankObservation  # noqa: E402
+
+CFG = {'CHLORINE_MIN_MG_L': 0.2, 'CHLORINE_NEAR_MARGIN_MG_L': 0.1, 'CHLORINE_MAX_MG_L': 4.0,
+       'WATER_WARM_C': 25.0, 'FORECAST_HOT_C': 35.0, 'CHLORINE_MAX_AGE_HOURS': 72,
+       'TEMP_MAX_AGE_HOURS': 72, 'WARM_RETEST_HOURS': 24}
+NOW = timezone.make_aware(datetime(2026, 5, 20, 12, 0))
+NO_WX = weather.unavailable('test: no forecast')
+
+
+def hot(max_c=41.0):
+    return weather.Forecast(available=True, daily_max_c=[(date(2026, 5, 20), max_c - 2), (date(2026, 5, 21), max_c)])
+
+
+def tank_profile(placement='rooftop', shade='full_sun'):
+    t = SimpleNamespace(placement=placement, shade=shade)
+    t.sun_exposed = placement in ('rooftop', 'elevated', 'ground') and shade == 'full_sun'
+    return t
+
+
+def reading(value, hours_ago):
+    return prio.Reading(value, NOW - timedelta(hours=hours_ago))
+
+
+class UnitAndValidationTests(TestCase):
+    K = TankObservation.Kind
+
+    def test_conversions(self):
+        self.assertEqual(services.to_canonical(self.K.WATER_TEMP, Decimal('98.6'), '°F'), Decimal('37.00'))
+        self.assertEqual(services.to_canonical(self.K.WATER_TEMP, Decimal('32'), '°F'), Decimal('0.00'))
+        self.assertEqual(services.to_canonical(self.K.WATER_TEMP, Decimal('31.456'), '°C'), Decimal('31.46'))
+        self.assertEqual(services.to_canonical(self.K.FREE_CHLORINE, Decimal('0.5'), 'ppm'), Decimal('0.50'))
+        with self.assertRaises(ValidationError):
+            services.to_canonical(self.K.FREE_CHLORINE, Decimal('1'), '°C')  # wrong unit for kind
+
+    def test_validation_rules(self):
+        now = timezone.now()
+        ok = services.validate_observation(self.K.FREE_CHLORINE, Decimal('0.4'), 'mg/L', 'dpd_strip', now)
+        self.assertEqual(ok, Decimal('0.40'))
+        bad = [
+            (self.K.FREE_CHLORINE, '11', 'mg/L', 'dpd_strip', now),            # implausible
+            (self.K.FREE_CHLORINE, '-0.1', 'mg/L', 'dpd_strip', now),          # negative
+            (self.K.WATER_TEMP, '200', '°F', 'thermometer', now),              # 93.3 °C
+            (self.K.WATER_TEMP, '30', '°C', 'dpd_strip', now),                 # method/kind mismatch
+            (self.K.WATER_TEMP, '30', '°C', 'thermometer', now + timedelta(hours=1)),   # future
+            (self.K.WATER_TEMP, '30', '°C', 'thermometer', now - timedelta(days=31)),   # too old
+        ]
+        for args in bad:
+            with self.assertRaises(ValidationError, msg=str(args)):
+                services.validate_observation(args[0], Decimal(args[1]), *args[2:])
+        # range edges are inclusive
+        services.validate_observation(self.K.WATER_TEMP, Decimal('70'), '°C', 'probe', now)
+        services.validate_observation(self.K.FREE_CHLORINE, Decimal('0'), 'mg/L', 'photometer', now)
+
+    def test_db_constraint_backs_up_validation(self):
+        from django.db import IntegrityError, transaction
+        c = Company.objects.create(name='C')
+        u = User.objects.create_user(username='u@x.io', email='u@x.io', password='x-Strong-pass-1')
+        t = Equipment.objects.create(company=c, tank_code='T', name='T', maintenance_interval_days=30)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            TankObservation.objects.create(equipment=t, kind='free_chlorine', value=Decimal('12'), entered_value=12,
+                                           entered_unit='mg/L', method='dpd_strip', measured_at=timezone.now(),
+                                           entered_by=u)
+
+
+class PriorityRuleTests(unittest.TestCase):
+    def ev(self, chlorine=None, temp=None, forecast=NO_WX, tank=None):
+        return prio.evaluate(tank or tank_profile(), chlorine, temp, forecast, CFG, NOW)
+
+    def test_missing_reading(self):
+        p = self.ev()
+        self.assertEqual((p.level, p.action), ('medium', 'test'))
+        self.assertEqual(self.ev(forecast=hot()).level, 'high')  # heat raises urgency of a missing reading
+
+    def test_below_threshold_and_exact_boundary(self):
+        p = self.ev(chlorine=reading(0.19, 2))
+        self.assertEqual((p.level, p.action), ('urgent', 'review'))
+        p = self.ev(chlorine=reading(0.2, 2))       # exactly the minimum is not below it...
+        self.assertEqual(p.action, 'repeat')          # ...but it is within the near-margin
+        self.assertFalse(self.ev(chlorine=reading(0.3, 2)).actionable)   # 0.3 = min + margin: not near
+
+    def test_above_maximum(self):
+        self.assertEqual((self.ev(chlorine=reading(4.5, 1)).action), 'review')
+
+    def test_stale_boundary(self):
+        self.assertFalse(self.ev(chlorine=reading(0.5, 72)).actionable)    # exactly 72 h: still fresh
+        p = self.ev(chlorine=reading(0.5, 72.5))
+        self.assertEqual((p.level, p.action), ('medium', 'test'))
+        self.assertEqual(self.ev(chlorine=reading(0.5, 73), forecast=hot()).level, 'high')
+
+    def test_stale_low_reading_is_retest_not_alarm(self):
+        p = self.ev(chlorine=reading(0.1, 100))
+        self.assertEqual(p.action, 'test')            # old data never produces an "urgent below" finding
+
+    def test_temperature_and_forecast_boundaries(self):
+        fine = reading(0.6, 30)                        # healthy but 30 h old
+        self.assertFalse(self.ev(chlorine=fine, temp=reading(24.99, 1)).actionable)
+        p = self.ev(chlorine=fine, temp=reading(25.0, 1))   # warm boundary is inclusive
+        self.assertEqual((p.level, p.action), ('medium', 'repeat'))
+        self.assertFalse(self.ev(chlorine=fine, forecast=hot(34.9)).actionable)
+        self.assertEqual(self.ev(chlorine=fine, forecast=hot(35.0)).action, 'repeat')
+        shaded = tank_profile('rooftop', 'shaded')
+        self.assertFalse(self.ev(chlorine=reading(0.6, 24), forecast=hot(), tank=shaded).actionable)  # 24 h not > 24 h
+        self.assertEqual(self.ev(chlorine=reading(0.6, 24.5), forecast=hot(), tank=shaded).action, 'repeat')
+
+    def test_stale_temperature_is_not_heat_context(self):
+        self.assertFalse(self.ev(chlorine=reading(0.6, 30), temp=reading(33, 80)).actionable)
+
+    def test_weather_failure_degrades_gracefully(self):
+        p = self.ev(chlorine=reading(0.6, 30))
+        self.assertFalse(p.actionable)
+        self.assertIn('Weather forecast unavailable', p.context[0])
+
+    def test_sun_exposed_temperature_gap(self):
+        p = self.ev(chlorine=reading(0.6, 2), forecast=hot())
+        self.assertEqual((p.level, p.action), ('low', 'test'))
+        shaded = self.ev(chlorine=reading(0.6, 2), forecast=hot(), tank=tank_profile('rooftop', 'shaded'))
+        self.assertFalse(shaded.actionable)
+
+    def test_unknown_profile_is_informational(self):
+        p = self.ev(chlorine=reading(0.6, 2), tank=tank_profile('unknown', 'unknown'))
+        self.assertEqual(p.action, 'profile')
+        self.assertFalse(p.actionable)
+
+    def test_ordering(self):
+        levels = [self.ev(chlorine=c).rank for c in (reading(0.1, 1), None, reading(0.6, 1))]
+        self.assertEqual(levels, sorted(levels))
+
+
+class WeatherClientTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
+    def fake(self, body):
+        resp = mock.MagicMock()
+        resp.read.return_value = body if isinstance(body, bytes) else json.dumps(body).encode()
+        resp.__enter__.return_value = resp
+        return resp
+
+    def test_success_parses_and_sends_timezone(self):
+        body = {'daily': {'time': ['2026-05-20', '2026-05-21'], 'temperature_2m_max': [39.5, 41.2]}}
+        with mock.patch('urllib.request.urlopen', return_value=self.fake(body)) as m:
+            f = weather.fetch(28.61, 77.21)
+            weather.fetch(28.61, 77.21)            # served from cache
+        self.assertTrue(f.available)
+        self.assertEqual(f.max_next_days, 41.2)
+        self.assertEqual(m.call_count, 1)
+        url = m.call_args[0][0]
+        self.assertIn('timezone=Asia%2FKolkata', url)
+        self.assertIn('temperature_2m_max', url)
+
+    def test_failures_never_raise(self):
+        cases = [urllib.error.URLError('down'), TimeoutError('slow'),
+                 urllib.error.HTTPError('u', 500, 'err', {}, None)]
+        for i, exc in enumerate(cases):
+            with mock.patch('urllib.request.urlopen', side_effect=exc):
+                f = weather.fetch(10 + i, 77)
+            self.assertFalse(f.available, exc)
+        for i, body in enumerate([b'not json', {'daily': {}}, {'daily': {'time': ['2026-05-20'],
+                                                                         'temperature_2m_max': []}}]):
+            with mock.patch('urllib.request.urlopen', return_value=self.fake(body)):
+                self.assertFalse(weather.fetch(40 + i, 77).available)
+        self.assertIn('location', weather.fetch(None, None).error)
+
+
+@override_settings(DHARA_PRIORITY=CFG)
+class TestPriorityWorkflowTests(DharaTestCase):
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        self.tank.placement, self.tank.shade = 'rooftop', 'full_sun'
+        self.tank.save()
+
+    def record(self, user, value, unit='mg/L', kind='free_chlorine', method='dpd_strip', hours_ago=1):
+        self.login(user)
+        return self.client.post(self.url('observation_create', self.tank.pk), {
+            'kind': kind, 'entered_value': value, 'entered_unit': unit, 'method': method,
+            'measured_at': timezone.localtime(timezone.now() - timedelta(hours=hours_ago)).strftime('%Y-%m-%dT%H:%M')})
+
+    def test_record_measurement_with_audit_and_conversion(self):
+        r = self.record(self.tech, '86', unit='°F', kind='water_temp', method='thermometer')
+        self.assertRedirects(r, self.url('tank_detail', self.tank.pk))
+        obs = TankObservation.objects.get()
+        self.assertEqual((obs.value, obs.entered_value, obs.entered_unit), (Decimal('30.00'), Decimal('86.00'), '°F'))
+        self.assertEqual(obs.entered_by, self.tech)
+        self.assertTrue(AuditEvent.objects.filter(action='observation.recorded', target_id=str(obs.pk)).exists())
+
+    def test_invalid_measurement_shows_errors(self):
+        r = self.record(self.tech, '15')
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'outside the plausible range')
+        self.assertEqual(TankObservation.objects.count(), 0)
+
+    def test_outsider_cannot_record(self):
+        self.client.force_login(self.outsider)
+        r = self.client.post(self.url('observation_create', self.tank.pk), {})
+        self.assertEqual(r.status_code, 403)
+
+    def test_low_reading_creates_one_followup_and_no_duplicates(self):
+        self.record(self.tech, '0.1')
+        self.login(self.warden)
+        r = self.client.get(self.url('test_priority'))
+        self.assertContains(r, 'below the configured minimum')
+        self.assertContains(r, 'Weather forecast unavailable')        # no location set: no network call
+        tasks = FollowUpTask.objects.filter(kind=FollowUpTask.Kind.TEST_PRIORITY)
+        self.assertEqual(tasks.count(), 1)
+        task = tasks.get()
+        self.assertEqual(task.assigned_to, self.tech)
+        self.assertEqual(task.due_date, timezone.localdate())          # urgent: due today
+        self.client.get(self.url('test_priority'))
+        services.sync_priority_followups(self.company, services.compute_priorities(self.company)[1])
+        self.assertEqual(tasks.count(), 1)                              # duplicates prevented
+        services.resolve_followup(task, self.warden, 'Repeat strip read 0.4 mg/L; reviewed.')
+        self.client.get(self.url('test_priority'))
+        self.assertEqual(tasks.filter(status='open').count(), 1)        # still low -> new task after resolution
+
+    def test_followup_audit_records_rule_reasons(self):
+        self.login(self.warden)
+        self.client.get(self.url('test_priority'))
+        ev = AuditEvent.objects.get(action='followup.created', summary__contains='test priority')
+        self.assertIn('No free-chlorine reading', ev.details['reasons'][0])
+
+    def test_healthy_fresh_reading_needs_no_followup(self):
+        self.record(self.tech, '0.6')
+        self.login(self.warden)
+        self.client.get(self.url('test_priority'))
+        self.assertFalse(FollowUpTask.objects.filter(kind=FollowUpTask.Kind.TEST_PRIORITY).exists())
+
+    def test_measurement_does_not_change_maintenance_or_lab_status(self):
+        self.record(self.tech, '0.1')
+        t = self.tank_dates()
+        self.assertEqual(t.maintenance_status, 'none')
+        self.assertTrue(t.report_missing)
+
+    def test_forecast_with_location(self):
+        self.company.latitude, self.company.longitude = Decimal('28.61'), Decimal('77.21')
+        self.company.save()
+        self.record(self.tech, '0.6', hours_ago=30)
+        hot_fc = hot(42)
+        with mock.patch.object(weather, 'fetch', return_value=hot_fc) as m:
+            self.login(self.warden)
+            r = self.client.get(self.url('test_priority'))
+        m.assert_called_once_with(Decimal('28.61000'), Decimal('77.21000'))
+        self.assertContains(r, 'This is air, not tank water')
+        task = FollowUpTask.objects.get(kind=FollowUpTask.Kind.TEST_PRIORITY)
+        self.assertIn('Repeat measurement', task.title)
+
+    def test_pages_render(self):
+        self.login(self.tech)
+        for name in ('test_priority',):
+            self.assertEqual(self.client.get(self.url(name)).status_code, 200)
+        self.assertEqual(self.client.get(self.url('observation_create', self.tank.pk)).status_code, 200)
+        self.assertContains(self.client.get(self.url('tank_detail', self.tank.pk)), 'not laboratory results')

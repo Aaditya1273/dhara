@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from . import services
 from .models import (
-    Company, Equipment, Invitation, ReviewStatus, ServiceRecord, User, WaterQualityReport,
+    Company, Equipment, Invitation, ReviewStatus, ServiceRecord, TankObservation, User, WaterQualityReport,
 )
 
 DATE = forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d')
@@ -56,8 +56,15 @@ class InvitationForm(forms.ModelForm):
 class CompanySettingsForm(forms.ModelForm):
     class Meta:
         model = Company
-        fields = ['name']
-        labels = {'name': 'Institution name'}
+        fields = ['name', 'latitude', 'longitude']
+        labels = {'name': 'Institution name', 'latitude': 'Campus latitude', 'longitude': 'Campus longitude'}
+        help_texts = {'longitude': 'Decimal degrees, e.g. 28.61, 77.21. Used only for the Open-Meteo weather forecast.'}
+
+    def clean(self):
+        cd = super().clean()
+        if (cd.get('latitude') is None) != (cd.get('longitude') is None):
+            raise ValidationError('Enter both latitude and longitude, or leave both empty.')
+        return cd
 
 
 def member_choices(company):
@@ -68,13 +75,27 @@ class TankForm(forms.ModelForm):
     class Meta:
         model = Equipment
         fields = ['tank_code', 'name', 'building', 'location', 'capacity_litres', 'responsible',
-                  'maintenance_interval_days', 'report_interval_days']
+                  'maintenance_interval_days', 'report_interval_days', 'placement', 'shade', 'material']
 
     def __init__(self, *args, company, **kwargs):
         super().__init__(*args, **kwargs)
         self.company = company
         self.fields['responsible'].queryset = member_choices(company)
         self.fields['responsible'].label_from_instance = lambda u: u.email
+        for name in ('placement', 'shade', 'material'):
+            self.fields[name].required = False
+
+    def _profile(self, name):
+        return self.cleaned_data.get(name) or 'unknown'
+
+    def clean_placement(self):
+        return self._profile('placement')
+
+    def clean_shade(self):
+        return self._profile('shade')
+
+    def clean_material(self):
+        return self._profile('material')
 
     def clean_tank_code(self):
         code = self.cleaned_data['tank_code'].strip().upper()
@@ -199,3 +220,30 @@ class FollowUpAssignForm(forms.Form):
 class ResolveForm(forms.Form):
     notes = forms.CharField(widget=forms.Textarea(attrs={'rows': 2}), label='Resolution notes')
 
+
+
+class ObservationForm(forms.Form):
+    kind = forms.ChoiceField(choices=TankObservation.Kind.choices, label='Measurement')
+    entered_value = forms.DecimalField(max_digits=6, decimal_places=2, label='Reading')
+    entered_unit = forms.ChoiceField(label='Unit', choices=[
+        (u, u) for units in TankObservation.UNITS.values() for u in units])
+    method = forms.ChoiceField(label='Method', choices=[
+        (m, label) for methods in TankObservation.METHODS.values() for m, label in methods if m != 'other'] + [
+        ('other', 'Other')])
+    measured_at = forms.DateTimeField(label='Measured at', widget=forms.DateTimeInput(
+        attrs={'type': 'datetime-local'}, format='%Y-%m-%dT%H:%M'),
+        help_text='When the reading was taken. Your entry time is recorded separately.')
+    sample_point = forms.CharField(max_length=120, required=False, label='Sample point',
+                                   help_text='e.g. tank outlet, Block A ground-floor tap.')
+    notes = forms.CharField(max_length=255, required=False)
+
+    def clean(self):
+        cd = super().clean()
+        if self.errors:
+            return cd
+        try:
+            cd['value'] = services.validate_observation(cd['kind'], cd['entered_value'], cd['entered_unit'],
+                                                        cd['method'], cd['measured_at'])
+        except ValidationError as e:
+            raise ValidationError(e.messages)
+        return cd

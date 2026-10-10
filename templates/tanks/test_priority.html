@@ -1,0 +1,55 @@
+{% extends 'base.html' %}{% load dhara %}
+{% block title %}Test priority{% endblock %}
+{% block content %}
+<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-2">
+  <div><p class="eyebrow">Heat-aware measurement planning</p><h1 class="text-3xl font-bold">Tank test priority</h1></div>
+  <a class="btn btn-ghost" href="{% url 'qr_app:followup_list' company.slug %}">Follow-ups →</a>
+</div>
+<p class="muted text-sm mb-6 max-w-3xl">Ranks tanks for a repeat measurement, a scheduled test or warden review, using your configured thresholds, how old the latest readings are, and the weather forecast as context. It does not predict chlorine levels, does not establish that water is safe, and does not instruct anyone to treat a tank.</p>
+
+<div class="grid lg:grid-cols-3 gap-6 items-start">
+  <section class="lg:col-span-2 card overflow-x-auto">
+    {% if rows %}
+    <table class="table">
+      <thead><tr><th>Tank</th><th>Priority</th><th>Why (rules that fired)</th><th>Follow-up</th></tr></thead>
+      <tbody>{% for t, p, task_id in rows %}
+        <tr>
+          <td><a class="font-semibold" href="{% url 'qr_app:tank_detail' company.slug t.pk %}">{{ t.tank_code }}</a><div class="text-xs muted">{{ t.name }}</div>
+            <a class="text-xs" href="{% url 'qr_app:observation_create' company.slug t.pk %}">Record measurement</a></td>
+          <td class="whitespace-nowrap">{% badge 'priority' p.level %}<div class="text-xs mt-1">{{ p.action_label }}</div></td>
+          <td class="text-sm"><ul class="grid gap-1">{% for r in p.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+            {% if p.context %}<ul class="grid gap-1 mt-1 text-xs muted">{% for c in p.context %}<li>• {{ c }}</li>{% endfor %}</ul>{% endif %}</td>
+          <td class="text-sm">{% if task_id %}<a href="{% url 'qr_app:followup_list' company.slug %}">Open task #{{ task_id }}</a>{% elif p.actionable %}—{% else %}<span class="muted">Not needed</span>{% endif %}</td>
+        </tr>
+      {% endfor %}</tbody>
+    </table>
+    {% else %}<div class="empty"><strong>No tanks registered</strong></div>{% endif %}
+  </section>
+
+  <aside class="grid gap-6">
+    <section class="card card-pad">
+      <p class="eyebrow mb-2">Weather context (forecast air temperature)</p>
+      {% if forecast.available %}
+        <ul class="text-sm grid gap-1">{% for d, t in forecast.daily_max_c %}<li class="flex justify-between"><span>{{ d|date:"D d M" }}</span><span class="font-semibold">max {{ t|floatformat:1 }} °C</span></li>{% endfor %}</ul>
+        <p class="text-xs muted mt-3">Source: {{ forecast.source }}, fetched {{ forecast.fetched_at|date:"d M H:i" }}. Air temperature, not tank-water temperature.</p>
+      {% else %}
+        <p class="text-sm">{{ forecast.error }}</p>
+        <p class="text-xs muted mt-2">Priorities still work, ranked without weather context.{% if membership.is_admin %} Set the campus location in <a href="{% url 'qr_app:company_settings' company.slug %}">settings</a>.{% endif %}</p>
+      {% endif %}
+    </section>
+    <section class="card card-pad">
+      <p class="eyebrow mb-2">Configured thresholds</p>
+      <dl class="text-sm grid gap-1">
+        <div class="flex justify-between gap-2"><dt class="muted">Free chlorine minimum</dt><dd>{{ cfg.CHLORINE_MIN_MG_L }} mg/L</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">"Close to minimum" margin</dt><dd>{{ cfg.CHLORINE_NEAR_MARGIN_MG_L }} mg/L</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">Free chlorine maximum</dt><dd>{{ cfg.CHLORINE_MAX_MG_L }} mg/L</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">Warm tank water</dt><dd>≥ {{ cfg.WATER_WARM_C }} °C</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">Hot forecast (air)</dt><dd>≥ {{ cfg.FORECAST_HOT_C }} °C</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">Chlorine reading stale after</dt><dd>{{ cfg.CHLORINE_MAX_AGE_HOURS|floatformat:0 }} h</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">Re-test in heat after</dt><dd>{{ cfg.WARM_RETEST_HOURS|floatformat:0 }} h</dd></div>
+      </dl>
+      <p class="text-xs muted mt-3">Institution policy, set by environment variables. Not a safety standard.</p>
+    </section>
+  </aside>
+</div>
+{% endblock %}

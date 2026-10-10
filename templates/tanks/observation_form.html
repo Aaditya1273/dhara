@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}Record measurement · {{ tank.tank_code }}{% endblock %}
+{% block content %}
+<div class="max-w-xl mx-auto">
+  <a href="{% url 'qr_app:tank_detail' company.slug tank.pk %}" class="text-sm">← {{ tank.tank_code }}</a>
+  <h1 class="text-3xl font-bold mt-2">Record a field measurement</h1>
+  <p class="muted mb-4">{{ tank.name }}. Enter exactly what your thermometer or test kit showed. Readings are stored with your name, the method and both the measurement time and the entry time.</p>
+  <form method="post" class="card card-pad" data-once x-data="{ kind: '{{ form.kind.value|default:'free_chlorine' }}' }">{% csrf_token %}
+    {% for e in form.non_field_errors %}<div class="notice notice-error mb-4" role="alert">{{ e }}</div>{% endfor %}
+    <div class="field"><label for="id_kind">Measurement</label>
+      <select name="kind" id="id_kind" x-model="kind" @change="$nextTick(() => [$refs.unit, $refs.method].forEach(s => { if (s.selectedOptions[0]?.parentElement.disabled) s.querySelector('optgroup:not([disabled]) option').selected = true }))">{% for v, l in form.fields.kind.choices %}<option value="{{ v }}" {% if form.kind.value == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    <div class="grid grid-cols-2 gap-x-4">
+      {% include 'partials/field.html' with field=form.entered_value %}
+      <div class="field{% if form.entered_unit.errors %} has-error{% endif %}"><label for="id_entered_unit">Unit</label>
+        <select name="entered_unit" id="id_entered_unit" x-ref="unit">
+          <optgroup label="Free chlorine" :disabled="kind !== 'free_chlorine'">{% for u in units.free_chlorine %}<option {% if form.entered_unit.value == u %}selected{% endif %}>{{ u }}</option>{% endfor %}</optgroup>
+          <optgroup label="Temperature" :disabled="kind !== 'water_temp'">{% for u in units.water_temp %}<option {% if form.entered_unit.value == u %}selected{% endif %}>{{ u }}</option>{% endfor %}</optgroup>
+        </select>{% for e in form.entered_unit.errors %}<p class="error">{{ e }}</p>{% endfor %}</div>
+    </div>
+    <div class="field{% if form.method.errors %} has-error{% endif %}"><label for="id_method">Method</label>
+      <select name="method" id="id_method" x-ref="method">
+        <optgroup label="Free chlorine" :disabled="kind !== 'free_chlorine'">{% for v, l in methods.free_chlorine %}<option value="{{ v }}" {% if form.method.value == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</optgroup>
+        <optgroup label="Temperature" :disabled="kind !== 'water_temp'">{% for v, l in methods.water_temp %}<option value="{{ v }}" {% if form.method.value == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</optgroup>
+      </select>{% for e in form.method.errors %}<p class="error">{{ e }}</p>{% endfor %}</div>
+    {% include 'partials/field.html' with field=form.measured_at %}
+    {% include 'partials/field.html' with field=form.sample_point %}
+    {% include 'partials/field.html' with field=form.notes %}
+    <p class="text-xs muted mb-4">ppm is treated as equal to mg/L (valid for dilute water samples). °F is converted to °C; the original entry is kept.</p>
+    <button class="btn btn-primary" type="submit">Save measurement</button>
+  </form>
+</div>
+{% endblock %}

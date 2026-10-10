@@ -166,3 +166,23 @@ if not DEBUG:
     SECURE_REFERRER_POLICY = 'same-origin'
     X_FRAME_OPTIONS = 'DENY'
 SECURE_REDIRECT_EXEMPT = [r'^healthz/$']
+
+
+def env_float(name, default):
+    return float(os.getenv(name, default))
+
+
+# Tank Test Priority thresholds. These are institution policy choices, not safety standards:
+# DHARA flags tanks for measurement or human review; it never declares water safe.
+DHARA_PRIORITY = {
+    'CHLORINE_MIN_MG_L': env_float('PRIORITY_CHLORINE_MIN_MG_L', 0.2),      # IS 10500 minimum free residual
+    'CHLORINE_NEAR_MARGIN_MG_L': env_float('PRIORITY_CHLORINE_NEAR_MARGIN_MG_L', 0.1),
+    'CHLORINE_MAX_MG_L': env_float('PRIORITY_CHLORINE_MAX_MG_L', 4.0),
+    'WATER_WARM_C': env_float('PRIORITY_WATER_WARM_C', 25.0),
+    'FORECAST_HOT_C': env_float('PRIORITY_FORECAST_HOT_C', 35.0),
+    'CHLORINE_MAX_AGE_HOURS': env_float('PRIORITY_CHLORINE_MAX_AGE_HOURS', 72),
+    'TEMP_MAX_AGE_HOURS': env_float('PRIORITY_TEMP_MAX_AGE_HOURS', 72),
+    'WARM_RETEST_HOURS': env_float('PRIORITY_WARM_RETEST_HOURS', 24),
+}
+OPEN_METEO_URL = os.getenv('OPEN_METEO_URL', 'https://api.open-meteo.com/v1/forecast')
+OPEN_METEO_TIMEOUT = env_float('OPEN_METEO_TIMEOUT', 5)

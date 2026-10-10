@@ -56,6 +56,11 @@ class Company(models.Model):
     auto_renew = models.BooleanField(default=False)
     yookassa_payment_method_id = models.CharField(max_length=255, null=True, blank=True)
     members = models.ManyToManyField(User, through='Membership', related_name='companies')
+    latitude = models.DecimalField(max_digits=8, decimal_places=5, null=True, blank=True,
+                                   validators=[MinValueValidator(-90), MaxValueValidator(90)],
+                                   help_text='Used only to fetch the public weather forecast for your campus.')
+    longitude = models.DecimalField(max_digits=8, decimal_places=5, null=True, blank=True,
+                                    validators=[MinValueValidator(-180), MaxValueValidator(180)])
 
     class Meta:
         verbose_name_plural = 'companies'
@@ -148,6 +153,15 @@ class Equipment(models.Model):
     report_interval_days = models.PositiveSmallIntegerField(
         null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(3650)],
         help_text='Optional: how often a water-quality report is expected. Leave empty for no expectation.')
+    placement = models.CharField(max_length=20, choices=[
+        ('unknown', 'Not recorded'), ('rooftop', 'Rooftop'), ('elevated', 'Elevated structure / tower'),
+        ('ground', 'Ground level'), ('underground', 'Underground sump'), ('indoor', 'Indoors')], default='unknown')
+    shade = models.CharField('sun exposure', max_length=12, choices=[
+        ('unknown', 'Not recorded'), ('full_sun', 'Full sun most of the day'), ('partial', 'Partly shaded'),
+        ('shaded', 'Fully shaded')], default='unknown')
+    material = models.CharField(max_length=16, choices=[
+        ('unknown', 'Not recorded'), ('plastic_dark', 'Plastic, dark colour'), ('plastic_light', 'Plastic, light colour'),
+        ('concrete', 'Concrete / masonry'), ('metal', 'Metal'), ('other', 'Other')], default='unknown')
     public_token = models.CharField(max_length=32, unique=True, default=new_public_token, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -194,6 +208,11 @@ class Equipment(models.Model):
         if self.report_interval_days and self.last_sample_date:
             return self.last_sample_date + timedelta(days=self.report_interval_days)
         return None
+
+    @property
+    def sun_exposed(self):
+        """True only when the recorded profile says the tank sits above ground in full sun."""
+        return self.placement in ('rooftop', 'elevated', 'ground') and self.shade == 'full_sun'
 
     @property
     def report_missing(self):
@@ -335,13 +354,14 @@ class FollowUpTask(models.Model):
         OVERDUE_MAINTENANCE = 'overdue_maintenance', 'Maintenance overdue'
         MISSING_REPORT = 'missing_report', 'Water-quality report missing'
         EVIDENCE_REQUESTED = 'evidence_requested', 'Reviewer requested changes'
+        TEST_PRIORITY = 'test_priority', 'Test priority (measurement or review)'
         OTHER = 'other', 'Other'
 
     class Status(models.TextChoices):
         OPEN = 'open', 'Open'
         RESOLVED = 'resolved', 'Resolved'
 
-    AUTO_KINDS = (Kind.OVERDUE_MAINTENANCE, Kind.MISSING_REPORT)
+    AUTO_KINDS = (Kind.OVERDUE_MAINTENANCE, Kind.MISSING_REPORT, Kind.TEST_PRIORITY)
 
     equipment = models.ForeignKey(Equipment, on_delete=models.PROTECT, related_name='followups', verbose_name='tank')
     kind = models.CharField(max_length=24, choices=Kind.choices)
@@ -362,7 +382,7 @@ class FollowUpTask(models.Model):
         ordering = ['status', 'due_date']
         constraints = [
             models.UniqueConstraint(fields=['equipment', 'kind'],
-                                    condition=Q(status='open', kind__in=['overdue_maintenance', 'missing_report']),
+                                    condition=Q(status='open', kind__in=['overdue_maintenance', 'missing_report', 'test_priority']),
                                     name='one_open_rule_task_per_tank_kind'),
             models.CheckConstraint(name='resolved_task_has_resolver',
                                    condition=Q(status='open') | Q(resolved_by__isnull=False, resolved_at__isnull=False)),
@@ -374,6 +394,46 @@ class FollowUpTask(models.Model):
     @property
     def is_overdue(self):
         return self.status == self.Status.OPEN and self.due_date < timezone.localdate()
+
+
+class TankObservation(models.Model):
+    """A field measurement taken at a tank (not a laboratory result). Values are stored in canonical
+    units (°C, mg/L) alongside exactly what was entered."""
+    class Kind(models.TextChoices):
+        WATER_TEMP = 'water_temp', 'Tank water temperature'
+        FREE_CHLORINE = 'free_chlorine', 'Free residual chlorine'
+
+    METHODS = {
+        Kind.WATER_TEMP: [('thermometer', 'Thermometer'), ('probe', 'Digital probe / logger'), ('other', 'Other')],
+        Kind.FREE_CHLORINE: [('dpd_strip', 'DPD test strip'), ('dpd_comparator', 'DPD comparator / drops'),
+                             ('photometer', 'Photometer / meter'), ('other', 'Other')],
+    }
+    UNITS = {Kind.WATER_TEMP: ['°C', '°F'], Kind.FREE_CHLORINE: ['mg/L', 'ppm']}
+    CANONICAL_UNIT = {Kind.WATER_TEMP: '°C', Kind.FREE_CHLORINE: 'mg/L'}
+
+    equipment = models.ForeignKey(Equipment, on_delete=models.PROTECT, related_name='observations', verbose_name='tank')
+    kind = models.CharField(max_length=16, choices=Kind.choices)
+    value = models.DecimalField(max_digits=6, decimal_places=2, help_text='Canonical unit: °C or mg/L.')
+    entered_value = models.DecimalField(max_digits=6, decimal_places=2)
+    entered_unit = models.CharField(max_length=8)
+    method = models.CharField(max_length=20)
+    measured_at = models.DateTimeField(help_text='When the measurement was taken (as stated by the person).')
+    recorded_at = models.DateTimeField(auto_now_add=True, help_text='When DHARA received it (server time).')
+    entered_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='+')
+    sample_point = models.CharField(max_length=120, blank=True, help_text='e.g. tank outlet, Block A tap.')
+    notes = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ['-measured_at', '-id']
+        indexes = [models.Index(fields=['equipment', 'kind', 'measured_at'])]
+        constraints = [
+            models.CheckConstraint(name='observation_value_in_range', condition=(
+                Q(kind='water_temp', value__gte=-5, value__lte=70) |
+                Q(kind='free_chlorine', value__gte=0, value__lte=10))),
+        ]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} {self.value} {self.CANONICAL_UNIT[self.kind]} ({self.equipment.tank_code})"
 
 
 class AuditEvent(models.Model):

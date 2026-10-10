@@ -20,6 +20,15 @@
         {% include 'partials/field.html' with field=form.report_interval_days %}
       </div>
     </fieldset>
+    <fieldset class="border-t pt-4 mt-2" style="border-color:var(--line)">
+      <legend class="eyebrow mb-2">Thermal profile</legend>
+      <p class="text-xs muted mb-3">Used only as context for test prioritisation (e.g. a rooftop tank in full sun). It is not used to estimate water temperature.</p>
+      <div class="grid sm:grid-cols-3 gap-x-4">
+        {% include 'partials/field.html' with field=form.placement %}
+        {% include 'partials/field.html' with field=form.shade %}
+        {% include 'partials/field.html' with field=form.material %}
+      </div>
+    </fieldset>
     <button class="btn btn-primary" type="submit">{% if tank %}Save changes{% else %}Register tank and create QR{% endif %}</button>
   </form>
 </div>
