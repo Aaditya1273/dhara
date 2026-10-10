@@ -53,11 +53,15 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--password', help='Password for both demo users (default: random, printed).')
         parser.add_argument('--files-dir', default='demo_files', help='Where to write demo photos and the sample PDF.')
+        parser.add_argument('--lat', type=float, default=28.6139, help='Campus latitude for the weather forecast (default New Delhi).')
+        parser.add_argument('--lon', type=float, default=77.2090, help='Campus longitude.')
 
     @transaction.atomic
     def handle(self, *args, **opts):
         password = opts['password'] or secrets.token_urlsafe(9)
         company, _ = Company.objects.get_or_create(name=DEMO_INSTITUTION)
+        company.latitude, company.longitude = round(opts['lat'], 5), round(opts['lon'], 5)
+        company.save()
         users = {}
         for email, role in (('warden@demo.dhara.test', Role.ADMIN), ('technician@demo.dhara.test', Role.TECHNICIAN)):
             user, created = User.objects.get_or_create(username=email, defaults={'email': email})
@@ -65,12 +69,17 @@ class Command(BaseCommand):
             user.save()
             Membership.objects.update_or_create(user=user, company=company, defaults={'role': role})
             users[role] = user
-        for code, name, building, interval, report in (
-                ('TANK-A', 'Tank A · overhead tank', 'Block A', 180, 180),
-                ('TANK-B', 'Tank B · underground sump', 'Block B', 90, None)):
-            Equipment.objects.get_or_create(company=company, tank_code=code, defaults=dict(
+        # Thermal profiles are configuration. No measurements are created: record real readings in the app.
+        for code, name, building, interval, report, profile in (
+                ('TANK-A', 'Tank A · overhead tank', 'Block A', 180, 180,
+                 dict(placement='rooftop', shade='full_sun', material='plastic_dark')),
+                ('TANK-B', 'Tank B · underground sump', 'Block B', 90, None,
+                 dict(placement='underground', shade='shaded', material='concrete'))):
+            tank, _ = Equipment.objects.get_or_create(company=company, tank_code=code, defaults=dict(
                 name=name, building=building, maintenance_interval_days=interval, report_interval_days=report,
                 responsible=users[Role.TECHNICIAN], location='Demo location (fictional)'))
+            if tank.placement == 'unknown':
+                Equipment.objects.filter(pk=tank.pk).update(**profile)
 
         out = Path(opts['files_dir'])
         out.mkdir(parents=True, exist_ok=True)
