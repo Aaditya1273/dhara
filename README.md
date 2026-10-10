@@ -4,7 +4,7 @@
 
 DHARA helps hostels, schools and campuses keep water-storage maintenance records, supporting evidence, human review decisions, maintenance schedules and water-quality reports in one traceable workflow. Every tank gets a QR code that opens a read-only status page.
 
-> **Status:** hackathon prototype (Environmental Hacks 2026, Heat & Water track). The features below marked ✅ are implemented and covered by automated tests in this repository. **Amazon S3 evidence storage is verified against real AWS** (ap-south-1, 2026-10-11). AWS IoT Core and a public deployment are not verified yet; see [AWS integration](#aws-integration).
+> **Status:** hackathon prototype (Environmental Hacks 2026, Heat & Water track). The features below marked ✅ are implemented and covered by automated tests in this repository. **Amazon S3 evidence storage is verified against real AWS** (ap-south-1, 2026-10-11), and the app is **deployed on Amazon EC2 with HTTPS**. AWS IoT Core is not verified yet; see [AWS integration](#aws-integration).
 
 **New: thermal twin and measured cooling.** A ₹500 in-tank probe (ESP32 + DS18B20) streams tank-water temperature through **AWS IoT Core**. DHARA fits a transparent heat-balance model per tank, validates it on held-out data before showing any forecast, and measures, rather than assumes, whether a cooling intervention (reflective paint, shade, insulation) lowered the tank's daily peak.
 
@@ -361,6 +361,32 @@ The suite covers:
 
 ## Deployment
 
+**Live demo deployment (verified 2026-10-11).** EC2 `t3.micro` in `ap-south-1`, running Amazon Linux 2023 with Docker.
+
+**How it is set up:**
+- Caddy issues a Let's Encrypt certificate for `<elastic-ip>.sslip.io`.
+- Port 80 redirects to 443 (308), and **no SSH port is open**. Admin access goes through AWS Systems Manager.
+- The app gets AWS credentials only from the instance role `dhara-ec2`. Its S3 access is limited to `dhara-prod/*` and `deploy/*`.
+- IMDSv2 is required, with a hop limit of 2 so the container can reach the role.
+- The SQLite database sits on a persistent Docker volume, which is acceptable for this single-instance demo.
+
+**Verified on the live server:**
+- the certificate chain;
+- the HTTP to HTTPS redirect;
+- the security headers;
+- port 22 closed;
+- static files served;
+- the in-container S3 write/read/delete using the role;
+- a real login and the core pages.
+
+**Commands:**
+```bash
+BUCKET=<bucket> ./deploy/aws/ec2/provision.sh   # create (≈ $0.018/hour in ap-south-1 incl. Elastic IP; billed hourly)
+BUCKET=<bucket> ./deploy/aws/ec2/redeploy.sh    # ship the current commit via S3 + Systems Manager
+./deploy/aws/ec2/teardown.sh                    # stop all server charges (EMPTY_BUCKET=1 BUCKET=… also empties S3)
+```
+
+**Other hosting:**
 The simplest credible AWS path is a container on **AWS App Runner** or **ECS Fargate**, with **RDS PostgreSQL** and a private **S3** bucket:
 
 ```bash
