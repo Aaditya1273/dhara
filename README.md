@@ -4,7 +4,7 @@
 
 DHARA helps hostels, schools and campuses keep water-storage maintenance records, supporting evidence, human review decisions, maintenance schedules and water-quality reports in one traceable workflow. Every tank gets a QR code that opens a read-only status page.
 
-> **Status:** hackathon prototype (Environmental Hacks 2026, Heat & Water track). The features below marked ✅ are implemented and covered by automated tests in this repository. Live AWS deployment has **not** been verified yet; see [AWS integration](#aws-integration).
+> **Status:** hackathon prototype (Environmental Hacks 2026, Heat & Water track). The features below marked ✅ are implemented and covered by automated tests in this repository. **Amazon S3 evidence storage is verified against real AWS** (ap-south-1, 2026-10-11). AWS IoT Core and a public deployment are not verified yet; see [AWS integration](#aws-integration).
 
 **New: thermal twin and measured cooling.** A ₹500 in-tank probe (ESP32 + DS18B20) streams tank-water temperature through **AWS IoT Core**. DHARA fits a transparent heat-balance model per tank, validates it on held-out data before showing any forecast, and measures, rather than assumes, whether a cooling intervention (reflective paint, shade, insulation) lowered the tank's daily peak.
 
@@ -238,7 +238,27 @@ Roles live on `Membership`, so being a warden in one institution grants nothing 
 - Rule 2 forwards the readings over HTTPS to `/api/sensors/ingest/`, where DHARA checks the device token and validates every reading.
 - Setup steps, policies and a verification checklist are in [`deploy/aws/iot/README.md`](deploy/aws/iot/README.md).
 
-**Amazon S3: evidence and report storage** (implemented; tested against mocked S3; live test pending).
+**Amazon S3: evidence and report storage** ✅ **verified on real AWS, 2026-10-11.**
+
+**Bucket:** private, in `ap-south-1`.
+- All four Block Public Access settings on.
+- Object ownership `BucketOwnerEnforced`, so ACLs are disabled.
+- Default SSE-S3 (AES256) encryption with Bucket Key.
+- Versioning enabled.
+
+**What was checked:**
+- The **live test** `LiveS3Tests` uploads, reads back, verifies SHA-256, checks the presigned URL and deletes. It **passes**.
+- **End-to-end through the app** with `STORAGE_BACKEND=s3`, on a throwaway database and the labelled demo photo:
+  - a maintenance-evidence upload is stored as an encrypted object whose size matches the database;
+  - the digest re-check against S3 passes;
+  - the in-app download redirects to a **presigned URL that returns 200**;
+  - the **plain object URL returns 403**;
+  - an anonymous user is redirected to login.
+- Test objects were removed afterwards.
+
+**Bug found only by the live test, and fixed.** Presigned URLs were signed for the global S3 endpoint. Buckets outside `us-east-1` answer with a 307 redirect to the regional host, so the signature failed (403). DHARA now signs for `https://s3.<region>.amazonaws.com` with virtual-hosted addressing.
+
+**Implementation:**
 
 - `STORAGE_BACKEND=s3` switches Django's default storage to `storages.backends.s3.S3Storage`.
 - Objects get generated keys (`dhara/evidence/<institution>/<uuid>.<ext>`), no ACL (bucket stays private), no overwrite.

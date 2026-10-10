@@ -115,6 +115,10 @@ if STORAGE_BACKEND == 's3':
     AWS_QUERYSTRING_EXPIRE = 300
     AWS_S3_FILE_OVERWRITE = False
     AWS_S3_SIGNATURE_VERSION = 's3v4'
+    # Sign for the regional endpoint. With the global endpoint, buckets outside us-east-1 answer with a
+    # 307 redirect to the regional host and the presigned signature no longer matches (403).
+    AWS_S3_ENDPOINT_URL = f'https://s3.{AWS_S3_REGION_NAME}.amazonaws.com'
+    AWS_S3_ADDRESSING_STYLE = 'virtual'
     AWS_LOCATION = os.getenv('AWS_S3_PREFIX', 'dhara')
     DEFAULT_STORAGE = {'BACKEND': 'storages.backends.s3.S3Storage'}
 elif STORAGE_BACKEND == 'local':
