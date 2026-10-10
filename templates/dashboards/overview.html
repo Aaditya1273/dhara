@@ -20,7 +20,7 @@
   <a href="{% url 'qr_app:report_list' company.slug %}" class="card card-pad no-underline col-span-2 lg:col-span-1" style="color:var(--ink)"><p class="eyebrow">Reports missing</p><p class="stat mt-1">{{ missing_report_count }}</p><p class="text-xs muted">per configured policy</p></a>
 </section>
 
-<div class="grid lg:grid-cols-3 gap-6">
+<div class="grid lg:grid-cols-3 gap-6 items-start">
   <section class="lg:col-span-2 card">
     <div class="card-pad pb-2 flex justify-between items-center"><h2 class="text-lg font-bold">Tanks needing attention</h2>
       <a class="text-sm" href="{% url 'qr_app:followup_list' company.slug %}">{{ open_task_count }} open follow-up{{ open_task_count|pluralize }} →</a></div>

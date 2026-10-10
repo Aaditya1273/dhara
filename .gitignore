@@ -8,3 +8,4 @@ db.sqlite3
 .env
 debug.log
 /demo_files/
+/.playwright-mcp/

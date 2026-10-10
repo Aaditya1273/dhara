@@ -18,7 +18,7 @@
     <a href="{% if user.is_authenticated %}{% url 'select_company' %}{% else %}{% url 'landing_page' %}{% endif %}" class="flex items-center gap-2 text-white no-underline">
       <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3C16 3 6 14 6 20a10 10 0 0 0 20 0C26 14 16 3 16 3z" fill="#129694"/><path d="M11 21a5 5 0 0 0 5 5" stroke="#e8f5f4" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
       <span class="font-display font-bold tracking-wide text-lg">DHARA</span>
-      {% if company %}<span class="hidden md:inline text-sm" style="color:#9fbfd2">/ {{ company.name }}</span>{% endif %}
+      {% if company %}<span class="hidden 2xl:inline text-sm" style="color:#9fbfd2">/ {{ company.name }}</span>{% endif %}
     </a>
     {% if user.is_authenticated and company %}
       {% with u=request.resolver_match.url_name %}
@@ -37,7 +37,7 @@
     {% endif %}
     <div class="flex items-center gap-2">
       {% if user.is_authenticated %}
-        <span class="hidden sm:flex flex-col text-right leading-tight">
+        <span class="hidden xl:flex flex-col text-right leading-tight">
           <span class="text-sm">{{ user.email }}</span>
           {% if membership %}<span class="text-xs" style="color:#9fbfd2">{{ membership.get_role_display }}</span>{% endif %}
         </span>
