@@ -1,0 +1,9 @@
+.venv
+.git
+.env
+db.sqlite3
+media
+staticfiles
+demo_files
+.playwright-mcp
+__pycache__

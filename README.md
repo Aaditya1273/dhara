@@ -1,472 +1,367 @@
 # DHARA — Institutional Water Evidence Ledger
 
-**Track the maintenance. Review the evidence. Keep water-quality results separate.**
+**Track the maintenance. Verify the evidence. Never confuse a cleaning record with water safety.**
 
-> DHARA helps hostels, schools, campuses and other institutions organize water-storage maintenance records, supporting evidence, review decisions and water-quality reports in one traceable workflow.
+DHARA helps hostels, schools and campuses keep water-storage maintenance records, supporting evidence, human review decisions, maintenance schedules and water-quality reports in one traceable workflow. Every tank gets a QR code that opens a read-only status page.
 
-![Project status](https://img.shields.io/badge/status-hackathon%20prototype-in%20development-informational)
-![Track](https://img.shields.io/badge/track-Heat%20%26%20Water-167D9A)
-![AWS](https://img.shields.io/badge/cloud-AWS-232F3E)
-![Focus](https://img.shields.io/badge/focus-maintenance%20evidence%20%26%20accountability-2E6B4F)
-
-**DHARA is a prototype in development.** This README describes its product intent and proposed MVP. Features should only be described as implemented after they have been built and tested in this repository.
+> **Status:** hackathon prototype (Environmental Hacks 2026, Heat & Water track). The features below marked ✅ are implemented and covered by automated tests in this repository. Live AWS deployment has **not** been verified yet; see [AWS integration](#aws-integration).
 
 ---
 
-## Table of Contents
-
-- [The problem](#the-problem)
-- [The idea](#the-idea)
-- [What makes DHARA different](#what-makes-dhara-different)
-- [Who it is for](#who-it-is-for)
-- [Product workflow](#product-workflow)
-- [Workflow and system diagrams](#workflow-and-system-diagrams)
-- [Evidence and status model](#evidence-and-status-model)
-- [Technical architecture](#technical-architecture)
-- [Proposed data model](#proposed-data-model)
-- [Security, privacy and trust boundaries](#security-privacy-and-trust-boundaries)
-- [Environmental impact and evaluation](#environmental-impact-and-evaluation)
-- [MVP scope](#mvp-scope)
-- [Technology choices](#technology-choices)
-- [Local development](#local-development)
-- [Configuration](#configuration)
-- [Deployment overview](#deployment-overview)
-- [Three-minute demo plan](#three-minute-demo-plan)
-- [Limitations](#limitations)
-- [Roadmap](#roadmap)
-- [Research and references](#research-and-references)
-
----
+## Contents
+[Problem](#the-problem) · [Solution](#the-solution) · [Users](#who-it-is-for) · [Features](#features) · [Workflow](#workflow) · [Architecture](#architecture) · [Data model](#data-model) · [Roles](#roles-and-permissions) · [AWS](#aws-integration) · [Evidence limits](#security-and-evidence-integrity) · [Setup](#local-setup) · [Configuration](#configuration) · [Tests](#migrations-and-tests) · [Deployment](#deployment) · [Demo](#demo-script) · [Impact metrics](#impact-metrics-to-measure) · [Limitations](#known-limitations) · [Roadmap](#roadmap) · [Attribution](#attribution-and-license)
 
 ## The problem
 
-Water does not become safe simply because it has reached a building. Storage tanks need appropriate maintenance, and institutions need a reliable way to track that work and the evidence associated with it.
+Storage tanks need regular cleaning, and institutions need to show that it happened. In practice the record is scattered across paper registers, phone photos, invoices, chat messages and laboratory PDFs. A warden cannot quickly answer: Which tank is overdue? Who submitted the last cleaning, with what evidence? Has anyone reviewed it? Is there a current lab report, and what did it actually test? What is still open, and who owns it?
 
-In practice, information may be spread across paper registers, photographs, invoices, messaging apps and laboratory PDFs. That can make it difficult for a facility manager to answer basic questions quickly:
+## The solution
 
-- Which tank is due for maintenance?
-- When was the last maintenance event recorded?
-- Who submitted the record, and what evidence was attached?
-- Has an authorized person reviewed the evidence?
-- Is a relevant water-quality report available, and when was the sample collected?
-- Which actions remain open, and who is responsible for resolving them?
+DHARA keeps four things **separate**, because merging them produces false confidence:
 
-The gap is not just missing data. It is the gap between a maintenance obligation, evidence of work, an accountable review and documented follow-through.
-
-### Three things that must not be confused
-
-| Concept | What it can establish | What it cannot establish by itself |
+| Concept | Question it answers | What it cannot establish by itself |
 |---|---|---|
-| **Maintenance record** | A maintenance event was entered into the system | That the work was performed correctly or made water potable |
-| **Supporting evidence** | Files and details were submitted for review | That a photograph is genuine, complete or independently verified |
-| **Water-quality report** | A laboratory or testing provider reported results for a particular sample and set of parameters | That every part of a tank is safe at all times, or that a different sample has the same result |
+| **Maintenance** | What work was recorded, for which date? | That the work was done correctly or made water potable |
+| **Evidence** | Which photos/documents support it? | That a photo is genuine or shows the right tank |
+| **Review** | Who checked it and what did they decide? | Independent verification of the physical work |
+| **Water quality** | What did a laboratory report for a sample? | That every part of the tank is safe at all times |
 
-DHARA keeps these concepts separate by design.
-
-## The idea
-
-DHARA is a mobile-first water-storage maintenance and evidence-management platform. Each registered tank gets a unique QR code that opens an appropriate status page. Authorized users can record maintenance, attach supporting evidence, review submissions, link water-quality reports and track outstanding follow-up.
-
-Instead of displaying an opaque “water safety score,” DHARA shows what is known, what has been documented, what has been reviewed and what remains missing.
-
-### The core loop
-
-**Register → Schedule → Submit evidence → Review → Follow up → Retrieve the record**
-
-The product's central promise is operational: help institutions make required maintenance easier to track, review and close out.
-
-## What makes DHARA different
-
-DHARA is not positioned as a tank-cleaning marketplace, an AI biofilm detector or a certificate that declares water safe from a photograph. Its proposed differentiator is an **institutional evidence workflow** connecting maintenance obligations with accountable review and separate water-quality records.
-
-### 1. Maintenance and testing remain separate
-
-A completed cleaning event does not automatically mark water as safe. Water-quality reports are recorded separately, with their own sample date, source, parameters, results and review status.
-
-### 2. Evidence is reviewed, not blindly trusted
-
-The system records who submitted an event, what evidence was attached and which authorized reviewer accepted, rejected or returned it for more information.
-
-### 3. Missing information creates follow-up
-
-Overdue maintenance, missing required evidence and missing expected reports can create actionable tasks. The workflow ends when a responsible person records a resolution—not when a dashboard simply changes color.
-
-### 4. QR access makes records easier to retrieve
-
-A user can scan a tank's QR code to access the permitted maintenance summary without navigating a large institutional system. Sensitive documents and personal information remain subject to access controls.
-
-### 5. The claims are deliberately bounded
-
-Timestamps, photographs, checksums and review records improve traceability, but do not prove every fact about the physical world. DHARA communicates those limits instead of turning incomplete evidence into a false safety guarantee.
+There is no blended "safety score". A missing report is shown as **"No water-quality report linked."**, a documentation gap, never a contamination claim.
 
 ## Who it is for
 
-| Role | Primary need | DHARA capability |
-|---|---|---|
-| **Warden / facility manager** | See which tanks need attention and manage maintenance obligations | Tank registry, schedule, outstanding actions and audit view |
-| **Maintenance provider** | Submit work details and supporting evidence | Maintenance submission and evidence upload |
-| **Authorized reviewer** | Decide whether a record is sufficiently documented | Accept, reject or request-more-evidence workflow |
-| **Student / resident** | Understand what has been recorded for a tank | QR-accessible maintenance summary and water-quality-report status |
-| **Auditor / authorized administrator** | Retrieve a history of events and decisions | Searchable records and exportable evidence history, when implemented |
+- **Wardens / facility administrators**: register tanks, set schedule policy, review submissions, link lab reports, close follow-ups.
+- **Technicians / service providers**: record maintenance from a phone and attach evidence; respond to reviewer requests.
+- **Students, residents, visitors**: scan a tank's QR code to see a read-only summary.
 
-The first release should target one manageable setting—such as a hostel or campus building—rather than attempting to serve every kind of institution at once.
+## Features
 
-## Product workflow
+✅ Implemented and tested · 🔜 Planned
 
-1. **Register a tank.** Create a unique record for a tank, including its building, responsible role, last recorded maintenance date and institution-defined schedule.
-2. **Create a maintenance task.** Calculate its due date from the configured policy and show who is responsible.
-3. **Submit the event.** Record the service date, provider details, completion note and supporting photographs or documents.
-4. **Review the submission.** An authorized reviewer accepts it, rejects it or asks for further evidence. The decision and reason are recorded.
-5. **Link a water-quality report.** Add the sample date, laboratory or testing provider, reported parameters, result and report file as a separate record.
-6. **Show the QR status.** Display a clear summary of maintenance and the availability of water-quality evidence, without implying that either proves overall potability.
-7. **Resolve outstanding actions.** Assign a follow-up when a required event or record is missing and record how the issue was resolved.
+| | Feature |
+|---|---|
+| ✅ | **Tank registry**: institution-scoped tank ID, label, building, internal location, capacity, responsible person, configured maintenance interval and optional report interval; search and filters |
+| ✅ | **QR codes**: unguessable 144-bit token per tank (not the DB id); PNG download |
+| ✅ | **Public QR page** (mobile): latest maintenance, evidence and review status, next due date, latest report date and status, open documentation items, prominent safety disclaimer. No names, notes, files or internal location |
+| ✅ | **Maintenance events**: event type, *claimed* work date (no future dates) vs server submission time, provider, notes, before/after photos, supporting documents |
+| ✅ | **Independent statuses**: evidence `missing/attached` (derived) and review `pending → accepted / rejected / changes_requested`, validated on the server |
+| ✅ | **Review queue**: reviewer and time recorded; reason required to reject or request changes; no self-review; cannot accept without evidence |
+| ✅ | **Corrections**: reviewed events are never edited; a correction is a new event linked via `amends` |
+| ✅ | **Water-quality reports**: separate model with lab, sample/report dates, parameters, results *as reported*, provenance, original file, institution review flag |
+| ✅ | **Due-date engine**: next due = last *accepted* work date + configured interval (Asia/Kolkata dates); statuses `none / overdue / due_soon (14 days) / ok` |
+| ✅ | **Follow-ups**: created by the configured schedule rule (maintenance needed, report missing) or by a reviewer requesting changes; assign, re-date, resolve with notes |
+| ✅ | **Audit trail**: every registration, submission, upload (with SHA-256), review, report and follow-up action with actor and server time |
+| ✅ | **Evidence digests**: SHA-256 of received bytes stored per file; "Re-check digest" recomputes from storage |
+| ✅ | **Upload validation**: extension allow-list, 8 MB limit, real content check (Pillow decode / PDF header), generated storage names |
+| ✅ | **Private file serving**: evidence and reports only through access-checked views (local) or 5-minute presigned URLs (S3) |
+| ✅ | **Per-institution roles** (warden / technician) and invitation links |
+| ✅ | **Storage switch**: local disk or private Amazon S3 bucket (django-storages + boto3), tested against mocked S3 |
+| 🔜 | Live S3 + RDS deployment on AWS (code and instructions ready; not yet run against a real account) |
+| 🔜 | Email/SMS reminders, Hindi UI translation, CSV/PDF audit export, S3 Object Lock retention |
 
-## Workflow and system diagrams
-
-### End-to-end maintenance workflow
+## Workflow
 
 ```mermaid
 flowchart TD
-    A[Register tank] --> B[Configure applicable maintenance policy]
-    B --> C[Create scheduled task]
-    C --> D{Task due or issue reported?}
-    D -- No --> E[Continue monitoring schedule]
-    E --> C
-    D -- Yes --> F[Assign responsible person]
-    F --> G[Submit maintenance event and evidence]
-    G --> H{Evidence complete?}
-    H -- No --> I[Request more evidence]
-    I --> G
-    H -- Yes --> J[Authorized review]
-    J --> K{Review decision}
-    K -- Reject --> L[Record reason and reopen action]
-    L --> F
-    K -- Accept --> M[Record reviewed maintenance event]
-    M --> N[Update tank QR summary]
-    N --> O[Track outstanding items]
+    A[Warden registers tank<br/>interval policy + responsible person] --> B[QR code generated]
+    B --> C{Schedule rule}
+    C -- no accepted maintenance / overdue --> F1[Follow-up opened<br/>assigned to responsible person]
+    C -- report expected but none current --> F2[Follow-up opened]
+    F1 --> D[Technician records maintenance<br/>claimed date + photos/documents]
+    D --> E[Review queue: pending]
+    E --> G{Warden decision<br/>not the submitter}
+    G -- accept, evidence required --> H[Accepted: next due date recalculated]
+    G -- request changes, reason required --> I[Changes requested<br/>follow-up to submitter]
+    I --> J[Submitter adds evidence] --> E
+    G -- reject, reason required --> K[Rejected, kept in history]
+    K --> L[Correction = new event amending the old one] --> E
+    F2 --> M[Warden links lab report<br/>separate record, unreviewed until marked]
+    H --> N[Person resolves follow-up with notes]
+    M --> N
+    B -.scan.-> P[Public read-only status page]
 ```
 
-### Maintenance status model
-
-Maintenance review status is separate from evidence availability and water-quality status. A lab report can be linked before or after a maintenance review; it is not a final state in a mandatory linear chain.
+Review states (maintenance) and report states (water quality) are independent:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Draft
-    Draft --> Submitted: Submit event
-    Submitted --> NeedsMoreEvidence: Reviewer requests evidence
-    NeedsMoreEvidence --> Submitted: Resubmit
-    Submitted --> Accepted: Reviewer accepts
-    Submitted --> Rejected: Reviewer rejects
-    Rejected --> Draft: Correct and resubmit
-    Accepted --> [*]
+    [*] --> pending: submitted
+    pending --> accepted: warden accepts (evidence attached)
+    pending --> rejected: warden rejects (reason)
+    pending --> changes_requested: warden requests evidence (reason)
+    changes_requested --> pending: submitter responds
+    accepted --> [*]
+    rejected --> [*]
 ```
+`WaterQualityReport`: `unreviewed → reviewed`. A report never changes maintenance status, and vice versa.
 
-**Separate water-quality report lifecycle:** `Not linked → Linked → Reviewed` (with any result or review outcome shown exactly as reported). “Linked” means a report is present; it does not mean a laboratory has confirmed that all water is safe.
-
-### User journey: scanning a tank QR code
-
-```mermaid
-flowchart TD
-    A[Scan tank QR code] --> B[Open permitted tank status page]
-    B --> C[Show latest recorded maintenance]
-    C --> D[Show evidence and review status]
-    D --> E[Show next due date and open actions]
-    E --> F{Water-quality report linked?}
-    F -- Yes --> G[Show report date, source and available results]
-    F -- No --> H[Display: No report linked]
-    G --> I[State that records are not a blanket potability certificate]
-    H --> I
-```
-
-### System architecture
+## Architecture
 
 ```mermaid
 flowchart LR
-    U[Warden / Provider / Reviewer / Resident] --> WEB[React PWA]
-    WEB --> HOST[AWS Amplify Hosting]
-    WEB --> API[Amazon API Gateway]
-    API --> FN[AWS Lambda]
-    FN --> DB[(Amazon DynamoDB)]
-    FN --> OBJ[(Amazon S3: evidence files)]
-    FN --> AUTH[Authentication and authorization layer]
-    QR[Tank QR code] --> WEB
+    Phone[Technician / Warden browser] -->|HTTPS| App
+    Visitor[QR scan] -->|/qr/token/| App
+    subgraph App[Django 5.2 app · gunicorn · Docker]
+      Views[Views + per-institution access mixins] --> Services[services.py<br/>state rules, validation, digests, audit]
+      Services --> ORM[Django ORM]
+      Services --> Storage[Django storage API]
+    end
+    ORM --> DB[(SQLite dev / PostgreSQL e.g. Amazon RDS)]
+    Storage -->|STORAGE_BACKEND=local| Disk[(MEDIA_ROOT, never publicly routed)]
+    Storage -->|STORAGE_BACKEND=s3| S3[(Amazon S3 private bucket<br/>presigned GET, 300 s)]
 ```
 
-The diagram shows the proposed target architecture. Authentication and authorization must be enforced in the backend; a role selector in the frontend is not a security boundary. If Amazon Cognito or another identity provider is used, document and configure the actual implementation rather than implying it is already deployed.
+Server-rendered Django templates with Tailwind (CDN) and Alpine.js for the mobile menu. No frontend framework and no ML model: the workflow is the product.
 
-## Evidence and status model
+## Data model
 
-DHARA must show distinct statuses rather than compressing every fact into a single “verified” badge.
+```mermaid
+erDiagram
+    Company ||--o{ Membership : has
+    User ||--o{ Membership : "role per institution"
+    Company ||--o{ Equipment : "owns (tank)"
+    Equipment ||--o{ ServiceRecord : "maintenance events"
+    ServiceRecord ||--o{ ServiceRecordPhoto : "evidence (sha256)"
+    ServiceRecord |o--o{ ServiceRecord : amends
+    Equipment ||--o{ WaterQualityReport : "lab reports (sha256)"
+    Equipment ||--o{ FollowUpTask : "follow-ups"
+    ServiceRecord |o--o{ FollowUpTask : "related event"
+    Company ||--o{ AuditEvent : "activity log"
+    Company ||--o{ Invitation : invites
+```
 
-### Maintenance event fields
+Model names keep the upstream QRInvent names (`Equipment` = tank, `ServiceRecord` = maintenance event, `ServiceRecordPhoto` = evidence) to keep the adaptation traceable. DB constraints: unique tank ID per institution; a decided review must have a reviewer and time; a resolved task must have a resolver; report date ≥ sample date; one open rule-generated task per tank and kind. Evidence, events and reports use `PROTECT`, so history cannot be deleted by cascading.
 
-- `eventId`: unique maintenance event identifier
-- `tankId`: tank this event belongs to
-- `submittedBy`: authenticated submitter identity
-- `submittedAt`: server-side submission timestamp
-- `serviceDate`: date the submitter says work occurred
-- `providerName`: provider or technician details, when supplied
-- `evidenceFiles`: references to associated files and their stored metadata
-- `reviewStatus`: `SUBMITTED`, `NEEDS_MORE_EVIDENCE`, `ACCEPTED` or `REJECTED`
-- `reviewedBy`, `reviewedAt`, `reviewNote`: reviewer details, when reviewed
-- `policyReference`: institution-configured schedule or requirement used for the due date
+## Roles and permissions
 
-### Water-quality record fields
+All checks are on the server (`qr_app/mixins.py`, `qr_app/services.py`). Every query is filtered by the institution in the URL *and* the user's membership in it; another institution's IDs return 404/403.
 
-- `reportId` and `tankId`
-- `sampleDate` and `reportDate`, where available
-- `laboratoryOrProvider`
-- `reportedParameters` and results exactly as supplied by the report
-- `reportFileKey` and file metadata
-- `recordStatus`: for example, `LINKED` or `REVIEWED`
-- `reviewNote`, where applicable
+| Action | Warden / Administrator | Technician | Public (QR) |
+|---|:-:|:-:|:-:|
+| View tanks, events, evidence, reports, follow-ups | ✅ | ✅ | summary only |
+| Register / edit tanks, set policy | ✅ | ❌ | ❌ |
+| Submit maintenance + evidence | ✅ | ✅ | ❌ |
+| Review maintenance | ✅ (not own) | ❌ | ❌ |
+| Respond to "changes requested" | ✅ | own events | ❌ |
+| Link / mark-review lab reports | ✅ | ❌ | ❌ |
+| Assign follow-ups | ✅ | ❌ | ❌ |
+| Resolve follow-ups | ✅ | if assigned | ❌ |
+| Invite / remove members, activity log | ✅ | ❌ | ❌ |
 
-Do not infer a result that is absent from the report. Preserve units, dates, parameter names and source context when displaying test results.
+Roles live on `Membership`, so being a warden in one institution grants nothing in another. Inviting an existing account requires that person to be signed in as that account.
 
-## Technical architecture
+## AWS integration
 
-The proposed implementation favors a small number of services with clear responsibilities.
+**Amazon S3: evidence and report storage** (implemented; tested against mocked S3; live test pending).
 
-| Component | Responsibility |
-|---|---|
-| **React + TypeScript PWA** | Mobile-first user interface, QR landing page, submission and review workflows |
-| **AWS Amplify Hosting** | Frontend deployment |
-| **Amazon API Gateway** | API entry point |
-| **AWS Lambda** | Input validation, due-date rules, state transitions and task handling |
-| **Amazon DynamoDB** | Structured records for tanks, maintenance events, reviews, reports and actions |
-| **Amazon S3** | Photo and report storage, preferably through short-lived authorized upload/download URLs |
-| **Authentication provider** | User identity and role-based access, if implemented in the MVP |
+- `STORAGE_BACKEND=s3` switches Django's default storage to `storages.backends.s3.S3Storage`.
+- Objects get generated keys (`dhara/evidence/<institution>/<uuid>.<ext>`), no ACL (bucket stays private), no overwrite.
+- Downloads go through DHARA's access check, then a 300-second presigned URL.
+- If an S3 write fails, the database transaction rolls back and the user sees "could not be stored, nothing was saved".
+- The SHA-256 digest stored in the DB can be re-checked against the S3 object from the event page.
 
-No machine-learning model is required for the core workflow. That is intentional: the first release solves the tracking and accountability problem without making unsupported claims about visual inspection or water safety.
+**Verification status:**
+- `MockedS3Tests` runs the real django-storages/boto3 path against [moto](https://github.com/getmoto/moto). It checks the object exists, has no public grant, its digest verifies, and downloads redirect to a signed URL. **Passing.**
+- `LiveS3Tests` uploads, reads back, verifies and deletes against a real bucket. **Skipped**: no AWS credentials were available while building. To run:
+  ```bash
+  export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=ap-south-1
+  DHARA_S3_TEST_BUCKET=your-private-test-bucket python manage.py test qr_app.tests.LiveS3Tests
+  ```
+- **Recommended bucket setup:** Block Public Access on, SSE-S3 encryption, versioning on. Give the app an IAM role with `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` on `arn:aws:s3:::BUCKET/dhara/*` and `s3:ListBucket` on the bucket.
+- **Database:** any PostgreSQL through `DATABASE_URL`, e.g. Amazon RDS. No LLM or AI service is used or needed.
 
-## Proposed data model
-
-The initial implementation can use separate DynamoDB tables or a documented single-table design. The important part is the relationships and authorization model, not the number of tables.
-
-### Core entities
-
-| Entity | Key fields | Relationship |
-|---|---|---|
-| `Institution` | `institutionId`, `name`, `policyConfig` | Owns buildings and tanks |
-| `Building` | `buildingId`, `institutionId`, `name` | Contains tanks |
-| `Tank` | `tankId`, `buildingId`, `label`, `policyId`, `responsibleRole` | Has many maintenance events and reports |
-| `MaintenanceEvent` | `eventId`, `tankId`, `submittedBy`, `submittedAt`, `reviewStatus` | Belongs to one tank |
-| `EvidenceFile` | `fileId`, `eventId`, `s3Key`, `checksum`, `uploadedAt` | Supports a maintenance event or report |
-| `Review` | `reviewId`, `eventId`, `reviewerId`, `decision`, `reviewedAt` | Records a review decision |
-| `WaterQualityReport` | `reportId`, `tankId`, `sampleDate`, `provider`, `reportFileKey` | Separate from maintenance-event state |
-| `ActionItem` | `actionId`, `tankId`, `ownerId`, `dueAt`, `status`, `resolution` | Tracks follow-up and closure |
-
-Validate all IDs, ownership relationships and permissions on the server. Do not accept a client-provided `reviewerId`, timestamp or role as proof of authority.
-
-## Security, privacy and trust boundaries
-
-DHARA handles photographs of physical infrastructure, potentially sensitive institution records and reports that may identify people or locations. Security and honest evidence labels are core product behavior, not optional polish.
-
-### Minimum security principles
-
-- **Backend authorization:** verify the authenticated actor and permission for every write, review and restricted read.
-- **Least privilege:** use separate IAM permissions for frontend hosting, API functions, database access and object storage.
-- **Private evidence storage:** keep S3 buckets private; use narrowly scoped, short-lived pre-signed URLs where appropriate.
-- **Input validation:** validate file type, size, event ownership, IDs and all state transitions on the server.
-- **Audit events:** record submissions, review decisions and meaningful state changes with actor and server timestamp.
-- **Privacy by default:** expose only the summary required on a public or shareable QR page; protect personal details and full reports.
-- **Retention and deletion:** document who can access, retain and remove records. Do not collect raw data that the workflow does not need.
-- **Secrets management:** never commit cloud credentials or private keys to the repository.
-
-### What evidence means
+## Security and evidence integrity
 
 | Mechanism | Useful for | Not proof of |
 |---|---|---|
-| Server timestamp | When the service received a request | When the physical work actually happened |
-| File checksum | Detecting byte changes when compared with a trusted stored digest | Authenticity or truth of the original photograph |
-| QR code | Locating a tank's record | Tank identity unless registration and physical labeling are controlled |
-| Human review record | Who made a recorded review decision | Independent verification that work happened as described |
-| Laboratory report | Results reported for a sample and tested parameters | Continuous safety for all water in all conditions |
+| Server submission time | When DHARA received the record | When the work physically happened (that is the *claimed* date) |
+| SHA-256 digest | Detecting later changes to the stored file | That the photo is genuine, unedited at capture, or shows this tank |
+| Human review | Who decided what, when, and why | Independent verification of the work |
+| Lab report | What a lab reported for one sample and parameter set | Continuous safety of all water |
+| Audit table | A readable trail of actions | Tamper-proofing: it is an ordinary DB table that a DB administrator could alter |
 
-Ordinary S3 storage is not automatically immutable. If stronger retention protection becomes necessary, evaluate S3 Versioning and S3 Object Lock and configure the required policies deliberately. See [AWS S3 integrity documentation](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html), [S3 Versioning](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html) and [S3 Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html).
+**Controls in place:**
+- CSRF on all forms
+- per-institution query scoping
+- server-side transitions with row locks
+- upload type, size and content validation
+- no public media route
+- templates auto-escaped (no `|safe`)
+- axes login lockout
+- OTP-protected admin site
+- `SECRET_KEY` required outside DEBUG
+- secure cookies, HSTS (configurable) and SSL redirect in production
+- `manage.py check --deploy` is clean apart from the opt-in HSTS subdomain and preload warnings
 
-## Environmental impact and evaluation
+**Not yet done:**
+- rate limiting beyond login
+- antivirus scanning of uploads
+- S3 Object Lock
+- external log anchoring
+- a formal security review
 
-The MVP should measure outcomes it can actually observe. It must not claim that recording maintenance alone reduces contamination or prevents illness.
+Do not call this production-secure until those are assessed.
 
-Suggested pilot metrics:
+## Local setup
 
-| Metric | Definition |
-|---|---|
-| Maintenance coverage | Share of registered tanks with a configured maintenance policy and responsible role |
-| Evidence completeness | Share of submitted events that include all evidence required by the institution's configured workflow |
-| Review turnaround | Time between event submission and the review decision |
-| Follow-up closure | Share of due action items marked resolved with a recorded outcome |
-| Record retrieval time | Time required for an authorized user to find the requested tank's maintenance and report history |
-| Report linkage | Share of applicable tank records with the expected report status explicitly recorded |
-
-A real pilot should establish a baseline before claiming improvement. Water-quality outcomes require appropriate testing and separate evaluation.
-
-## MVP scope
-
-### Planned for the hackathon MVP
-
-- [ ] Register an institution and tanks
-- [ ] Generate a QR code for each tank
-- [ ] Configure a maintenance schedule per institution or tank
-- [ ] Create a maintenance event with notes and supporting evidence
-- [ ] Store evidence files and record their metadata
-- [ ] Implement authorized accept, reject and request-more-evidence actions
-- [ ] Display a QR-accessible maintenance summary
-- [ ] Link a separate water-quality report and show whether a report is missing
-- [ ] Create and resolve a follow-up action for overdue or incomplete items
-- [ ] Demonstrate the real AWS-backed workflow end to end
-- [ ] Add tests for authorization, invalid transitions, missing evidence and error paths
-
-Update this checklist as features are implemented and tested. Do not leave a feature checked merely because a screen or mock response exists.
-
-### Explicitly out of scope for the first version
-
-- AI certification that water is safe to drink
-- Biofilm detection from a small photo dataset
-- Automatic inference of microbiological contamination from photographs
-- A cleaning-service marketplace or payments
-- A universal legal-compliance claim for every institution
-- Claims of immutable or fraud-proof records without the corresponding controls
-- Predictive health claims or unmeasured environmental savings
-
-## Technology choices
-
-The proposed MVP uses:
-
-- **Frontend:** React, TypeScript and a mobile-first PWA
-- **Hosting:** AWS Amplify Hosting
-- **API:** Amazon API Gateway and AWS Lambda
-- **Database:** Amazon DynamoDB
-- **Evidence storage:** Amazon S3
-- **QR access:** a unique URL associated with each registered tank
-- **Testing:** unit tests for validation and state transitions, plus end-to-end workflow tests
-
-This is a proposed stack. Keep the README aligned with the actual dependency files and deployed resources as the implementation evolves.
-
-## Local development
-
-The repository is still in development, so the commands below are a starting convention. Adjust them to match the actual scripts and infrastructure files committed to this repository.
-
-### Prerequisites
-
-- A supported Node.js LTS release and npm
-- Git
-- An AWS account and appropriately scoped development credentials for cloud integration tests
-- AWS CLI and the chosen deployment tooling, if deploying from the terminal
-
-### Install and run
+Requires Python 3.12–3.14.
 
 ```bash
-git clone <YOUR_REPOSITORY_URL>
-cd <YOUR_REPOSITORY_DIRECTORY>
-npm install
-cp .env.example .env.local
-npm run dev
+git clone https://github.com/Aaditya1273/dhara.git && cd dhara
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+cp .env.example .env            # then set SECRET_KEY; DEBUG=True for local
+python manage.py migrate
+python manage.py seed_demo      # prints demo logins; writes demo_files/
+python manage.py runserver
 ```
-
-`npm run dev` and `.env.example` should be included by the implementation. If they do not exist yet, update this section when the project scaffold is committed. Never put AWS access keys in a frontend environment file or commit secrets to Git.
-
-### Tests
-
-```bash
-npm test
-npm run build
-```
-
-These scripts are recommended conventions, not a claim that the current repository already contains them. Add and run tests for the workflow before treating a build as release-ready.
+Open http://127.0.0.1:8000, or register your own institution at `/register/`.
 
 ## Configuration
 
-Document the actual environment variables in `.env.example` and keep the example free of secrets. A likely configuration set for the proposed architecture is:
+See `.env.example`. Variables read by the app:
 
-| Variable | Purpose |
+| Variable | Default | Purpose |
+|---|---|---|
+| `SECRET_KEY` | required unless `DEBUG=True` | Django signing key |
+| `DEBUG` | `False` | Never `True` in production |
+| `ALLOWED_HOSTS` | `127.0.0.1,localhost` | Comma-separated hostnames |
+| `CSRF_TRUSTED_ORIGINS` | empty | e.g. `https://dhara.example.org` |
+| `DATABASE_URL` | SQLite file | `postgres://…` for production |
+| `TIME_ZONE` | `Asia/Kolkata` | Due-date calendar |
+| `STORAGE_BACKEND` | `local` | `local` or `s3` |
+| `AWS_STORAGE_BUCKET_NAME`, `AWS_REGION`, `AWS_S3_PREFIX` | –, `ap-south-1`, `dhara` | S3 settings |
+| `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS` | `True`, `0` | Production HTTPS policy |
+| `BILLING_ENABLED` | `False` | Re-enables upstream QRInvent YooKassa billing. Leave off for DHARA |
+| `LOG_LEVEL` | `INFO` | Console logging |
+
+## Migrations and tests
+
+```bash
+python manage.py makemigrations --check   # no pending model changes
+python manage.py migrate
+python manage.py test qr_app              # 35 tests; LiveS3Tests skipped without a bucket
+```
+The suite covers:
+- tank creation and validation, QR token resolution
+- public page field exposure and no contamination claims
+- submission, upload rejection, oversize files, storage-failure rollback
+- review accept/reject/changes, unauthorized and self review, transitions
+- cross-institution access, per-institution roles, invitation ownership
+- report independence, due-date policy, rule follow-ups, assign/resolve
+- digest tamper detection, mocked S3 privacy, legacy pages and billing gate
+
+## Deployment
+
+The simplest credible AWS path is a container on **AWS App Runner** or **ECS Fargate**, with **RDS PostgreSQL** and a private **S3** bucket:
+
+```bash
+docker build -t dhara .
+docker run -p 8000:8000 --env-file .env.production dhara   # runs migrate, then gunicorn
+```
+
+1. Create a private S3 bucket (see the policy above) and an RDS PostgreSQL database.
+2. Push the image to Amazon ECR and create an App Runner service from it. Give its instance role the S3 permissions above.
+3. Set the environment: `SECRET_KEY`, `DEBUG=False`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `DATABASE_URL`, `STORAGE_BACKEND=s3`, `AWS_STORAGE_BUCKET_NAME`, `AWS_REGION`.
+4. Point the health check at `/healthz/`. It is exempt from the SSL redirect.
+5. Create the first warden through `/register/`, or run `python manage.py seed_demo` once for a demo.
+
+Static files are served by WhiteNoise. Don't use SQLite or local media storage on ephemeral or multi-instance hosts.
+
+**Troubleshooting**
+
+| Symptom | Fix |
 |---|---|
-| `VITE_API_BASE_URL` | Base URL for the deployed API |
-| `VITE_PUBLIC_TANK_BASE_URL` | Base URL used to construct tank QR links |
-| `AWS_REGION` | AWS region configured for backend deployment; backend-only where possible |
-| `TANKS_TABLE_NAME` | Tank record table or its equivalent in the chosen data model |
-| `EVENTS_TABLE_NAME` | Maintenance-event record table or its equivalent |
-| `REPORTS_TABLE_NAME` | Water-quality record table or its equivalent |
-| `EVIDENCE_BUCKET_NAME` | Private S3 bucket for evidence storage |
+| `ImproperlyConfigured: SECRET_KEY must be set` | Set `SECRET_KEY` or `DEBUG=True` locally |
+| `DisallowedHost` | Add the host to `ALLOWED_HOSTS` |
+| CSRF failure behind HTTPS proxy | Set `CSRF_TRUSTED_ORIGINS` |
+| Redirect loop behind a load balancer | It must send `X-Forwarded-Proto`, or set `SECURE_SSL_REDIRECT=False` and terminate TLS upstream |
+| `AWS_STORAGE_BUCKET_NAME is required` | Set it, or use `STORAGE_BACKEND=local` |
+| Uploads fail with "could not be stored" | Check S3 permissions and the region; the app log has the boto3 error |
 
-These names are illustrative. Use only variables the implementation actually reads. Frontend variables prefixed with `VITE_` are exposed to the client and must never contain secrets.
+## Demo script
 
-## Deployment overview
+`python manage.py seed_demo` creates **"DEMO Hostel (demonstration data)"** with:
+- `warden@demo.dhara.test` and `technician@demo.dhara.test` (password printed, or set with `--password`)
+- Tank A (180-day maintenance and report policy) and Tank B
+- `demo_files/`: labelled demo photos and a PDF that says "SAMPLE REPORT – NOT A REAL LABORATORY RESULT"
 
-1. Provision the database, private evidence bucket, execution roles and API resources.
-2. Configure authentication and backend authorization before exposing write or review operations.
-3. Deploy the API and set its environment variables and least-privilege permissions.
-4. Deploy the PWA to Amplify and configure the API base URL.
-5. Test tank registration, file upload, review permissions, QR access and follow-up closure against the deployed environment.
-6. Verify that no private evidence is publicly accessible without authorization.
-7. Capture the deployed API request and response for the hackathon demo.
+1. **Warden:** Tanks → Register tank, or use Tank A. Show the QR code on the tank page.
+2. **Overview:** "Need maintenance" counts Tank A, and follow-ups were opened by the schedule rule.
+3. **Technician (phone width):** Tank A → Record maintenance → attach `DEMO-before.png` and `DEMO-after.png` → Submit. The event shows *Pending review*.
+4. **Warden:** Review queue → open the event → Accept with a note, or request more evidence to show the round trip.
+5. **Scan the QR, or open the public page:** last accepted maintenance, next due date, *Evidence attached · Accepted*, and "No water-quality report linked."
+6. **Warden:** Link water-quality report → upload the SAMPLE PDF. The public page now shows the lab and sample date as *Uploaded, not yet reviewed*. Maintenance status is unchanged.
+7. **Follow-ups:** assign one, then resolve it with notes ("Cleaned, event #1 accepted").
+8. **Activity:** the full trail with SHA-256 digests. On the event page, "Re-check digest" verifies the stored file.
+9. **AWS:** run with `STORAGE_BACKEND=s3`, upload evidence and show the private object and presigned URL. This needs a real bucket.
 
-Check service-specific pricing, quotas and regional availability before deployment. The presence of free-tier credits does not guarantee every configuration will remain free.
+## Impact metrics to measure
 
-## Three-minute demo plan
+Measure these in a pilot; DHARA makes no outcome claims yet.
 
-A strong demo should show the product performing a complete workflow—not a slide deck describing future capabilities.
-
-| Time | Demonstration |
+| Metric | Definition |
 |---|---|
-| **0:00–0:25** | Explain the institutional problem: maintenance records, evidence and lab reports are difficult to track together. |
-| **0:25–0:55** | Register a tank, configure an example policy and generate its QR code. |
-| **0:55–1:25** | Submit a maintenance event and upload clearly labeled demo evidence. |
-| **1:25–1:55** | Sign in as an authorized reviewer and accept, reject or request more evidence. |
-| **1:55–2:20** | Scan the QR code and show maintenance-review status separately from water-quality-report status. |
-| **2:20–2:45** | Show an overdue or incomplete action and record its resolution. |
-| **2:45–3:00** | Show the real AWS integration and summarize the measured outcome the product is designed to improve. |
+| Maintenance coverage | Share of tanks with a configured interval and a responsible person |
+| Schedule adherence | Share of tanks not in `none`/`overdue` status |
+| Evidence completeness | Share of submitted events with evidence before review |
+| Review turnaround | Submission time to review decision |
+| Follow-up closure | Share of follow-ups resolved, and median time to resolve |
+| Record retrieval time | Time for a warden to produce a tank's history, compared with the paper baseline |
+| Report linkage | Share of tanks with a report policy that have a current report |
 
-Use real data only when you have permission and can represent it accurately. Clearly label synthetic records and demonstration photographs. Never imply that the demo describes an actual institution if it does not.
+Water-quality outcomes need proper testing and a separate evaluation.
 
-## Limitations
+## Known limitations
 
-- DHARA records information supplied by users; it cannot guarantee that every submission reflects what happened physically.
-- A photo can document visible conditions but cannot establish microbiological or chemical water safety.
-- A maintenance event is not a substitute for the relevant water-quality test.
-- A linked PDF does not independently prove the laboratory, sample chain of custody or validity of the reported results.
-- A QR code is only as trustworthy as the registration and labeling process behind it.
-- Server timestamps and checksums improve traceability but are not, by themselves, proof against fraud or administrator-level tampering.
-- Maintenance schedules and regulatory requirements depend on the institution and applicable policy. Do not assume one guideline applies universally.
-- The MVP's impact must be evaluated with real users and records before broader environmental or commercial claims are made.
+- DHARA records what users submit. It cannot confirm that work physically happened as described.
+- Photos cannot establish microbiological or chemical safety. A linked PDF does not prove the laboratory, the chain of custody or the validity of the results.
+- A QR code is only as trustworthy as the registration and physical labelling behind it.
+- The audit log, timestamps and digests aid traceability. They are not proof against administrator-level tampering.
+- Schedule intervals are whatever the institution configures. DHARA encodes no legal standard.
+- Rule-based follow-ups are generated when the overview or follow-up page loads. There is no background scheduler or notifications yet.
+- No email delivery: invitations are links the warden shares by hand.
+- The Tailwind CDN build is fine for the prototype; for production, compile the CSS.
+- The upstream billing templates (YooKassa) are still in Russian and only reachable with `BILLING_ENABLED=True`.
 
 ## Roadmap
 
-### Phase 1 — Working prototype
+1. Live AWS deployment (App Runner + RDS + S3) and the live S3 test in CI.
+2. Pilot with one consenting institution. Measure the metrics above against its current process.
+3. Scheduled reminders, CSV/PDF export of a tank's history, Hindi interface.
+4. Stronger integrity: S3 versioning plus Object Lock for evidence, and periodic export of audit digests.
 
-Tank registration, QR status page, maintenance evidence upload, review actions, separate report linking and follow-up tracking.
+## Attribution and license
 
-### Phase 2 — Pilot validation
+DHARA is built on **[QRInvent](LICENSE)**, a Django QR equipment-maintenance starter © 2026 RSLV, used under the **MIT License** (kept in `LICENSE`). The first commit in this repository is the unmodified upstream import.
 
-Test the workflow with a consenting institution. Measure record-retrieval time, evidence completeness, review turnaround and follow-up closure against the existing process.
+**Adapted from QRInvent:**
+- Django project layout and multi-institution URL scheme (`/<institution>/…`)
+- user, company and membership models, invitations and registration
+- QR generation with `qrcode`
+- the service-record and photo concept (now maintenance events and evidence)
+- axes and OTP security setup
+- the YooKassa subscription code (kept but disabled by default)
 
-### Phase 3 — Stronger governance controls
+**Original to DHARA:**
+- tank schema and due-date engine
+- independent review workflow with transition rules, no self-review and amendments
+- evidence kinds and SHA-256 digests, with upload content validation
+- water-quality report model
+- follow-up tasks (schedule rule and reviewer-created)
+- audit log
+- per-institution roles, which fix upstream's global role escalation
+- public QR status page
+- private file serving and the S3 storage backend
+- the whole interface and design system
+- the test suite, the demo seed command and the Docker/deployment setup
 
-Add more granular roles, exportable audit history, retention policies, stronger evidence-integrity controls and institution-level reporting based on validated user needs.
+**Removed from upstream:**
+- the generic equipment-template and custom-field builder, which the tank schema replaces (it also had a cascade that deleted all equipment when a template was deleted)
 
-### Phase 4 — Integrations and expansion
+**AI tools:** implementation was developed with Claude Code (Anthropic) as a coding assistant, under the author's direction and review.
 
-Consider laboratory integrations and related maintenance workflows, such as air-purifier filter replacement records, only after the water-maintenance workflow demonstrates value.
+## References
 
-## Research and references
-
-- **Government of India's National Health Mission — Kayakalp Implementation Guidebook:** includes guidance for applicable healthcare facilities on cleaning water-storage tanks and keeping cleaning records. Its institutional requirements should not be assumed to apply to every hostel or school. [Read the guidebook](https://nhm.gov.in/images/pdf/in-focus/Implementation_Guidebook_for_Kayakalp.pdf)
-- **Amazon S3 — Checking object integrity:** describes checksums for validating uploaded and downloaded data. [AWS documentation](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html)
-- **Amazon S3 — Versioning:** describes retaining multiple versions of objects to aid recovery from accidental overwrites or deletions. [AWS documentation](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html)
-- **Amazon S3 — Object Lock:** describes retention-based protection for object versions and its configuration requirements. [AWS documentation](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html)
-
-These references support the design rationale; they do not certify DHARA, establish that a particular tank is unsafe or prove that the proposed product has already achieved an environmental outcome.
-
-## Contributing
-
-Contributions, issue reports and implementation feedback are welcome once the repository's contribution and licensing terms are published. Please do not submit real personal information, private laboratory reports or identifiable infrastructure photographs in public issues.
-
-## License
-
-Add the project's chosen license before inviting reuse or external contributions. Until a license is present in the repository, do not assume the code is open source or available for unrestricted reuse.
-
----
-
-**DHARA — Because maintenance should be documented, evidence should be reviewable, and water quality should be supported by the right evidence.**
+- National Health Mission, *Kayakalp Implementation Guidebook*: tank-cleaning record guidance for healthcare facilities. It does not apply to every hostel or school by default. [PDF](https://nhm.gov.in/images/pdf/in-focus/Implementation_Guidebook_for_Kayakalp.pdf)
+- Amazon S3 docs: [object integrity](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html) · [Versioning](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html) · [Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html)
