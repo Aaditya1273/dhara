@@ -1,0 +1,13 @@
+Django==5.2.*
+django-axes==8.0.0
+django-otp==1.6.1
+dj-database-url==3.0.1
+python-dotenv==1.1.1
+python-slugify==8.0.4
+qrcode==8.2
+pillow==11.3.0
+psycopg2-binary>=2.9.10
+gunicorn==23.0.0
+yookassa==3.7.0
+django-storages[s3]>=1.14
+boto3>=1.35
