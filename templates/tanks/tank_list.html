@@ -1,0 +1,50 @@
+{% extends 'base.html' %}{% load dhara %}
+{% block title %}Tanks{% endblock %}
+{% block content %}
+<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+  <div><h1 class="text-3xl font-bold">Tank registry</h1><p class="muted text-sm">{{ total }} tank{{ total|pluralize }} registered</p></div>
+  {% if membership.is_admin %}<a class="btn btn-primary" href="{% url 'qr_app:tank_create' company.slug %}">Register tank</a>{% endif %}
+</div>
+<form method="get" class="card card-pad grid sm:grid-cols-4 gap-3 mb-6 items-end" role="search">
+  <div class="field mb-0 sm:col-span-2"><label for="q">Search</label><input type="search" id="q" name="q" value="{{ q }}" placeholder="Tank ID, label or building"></div>
+  <div class="field mb-0"><label for="status">Maintenance status</label>
+    <select id="status" name="status">
+      <option value="">Any</option>
+      <option value="attention" {% if status == 'attention' %}selected{% endif %}>Needs attention</option>
+      <option value="none" {% if status == 'none' %}selected{% endif %}>No accepted maintenance</option>
+      <option value="overdue" {% if status == 'overdue' %}selected{% endif %}>Overdue</option>
+      <option value="due_soon" {% if status == 'due_soon' %}selected{% endif %}>Due soon</option>
+      <option value="ok" {% if status == 'ok' %}selected{% endif %}>Up to date</option>
+    </select></div>
+  <div class="field mb-0"><label for="building">Building</label>
+    <select id="building" name="building"><option value="">Any</option>{% for b in buildings %}<option {% if b == building %}selected{% endif %}>{{ b }}</option>{% endfor %}</select></div>
+  <div class="sm:col-span-4 flex gap-2"><button class="btn btn-ghost" type="submit">Apply filters</button>{% if q or status or building %}<a class="btn btn-ghost" href="?">Clear</a>{% endif %}</div>
+</form>
+
+{% if tanks %}
+<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+  {% for t in tanks %}
+  <article class="card card-pad flex flex-col gap-3">
+    <div class="flex justify-between gap-2">
+      <div><p class="mono muted">{{ t.tank_code }}</p><h2 class="text-lg font-bold"><a href="{% url 'qr_app:tank_detail' company.slug t.pk %}" style="color:var(--ink)">{{ t.name }}</a></h2>
+        <p class="text-sm muted">{{ t.building|default:"No building set" }}{% if t.capacity_litres %} · {{ t.capacity_litres }} L{% endif %}</p></div>
+      <img src="{% url 'qr_app:tank_qr' company.slug t.pk %}" alt="QR code for {{ t.tank_code }}" width="64" height="64" loading="lazy" class="rounded border" style="border-color:var(--line)">
+    </div>
+    <div class="flex flex-wrap gap-2">{% badge 'maintenance' t.maintenance_status %}{% if t.report_missing %}<span class="badge badge-warn">Report missing</span>{% endif %}</div>
+    <dl class="grid grid-cols-2 gap-2 text-sm">
+      <div><dt class="muted text-xs">Last accepted maintenance</dt><dd>{{ t.last_accepted_date|date:"d M Y"|default:"—" }}</dd></div>
+      <div><dt class="muted text-xs">Next due</dt><dd>{{ t.next_due_date|date:"d M Y"|default:"Now" }}</dd></div>
+    </dl>
+    <div class="flex gap-2 mt-auto pt-2">
+      <a class="btn btn-teal flex-1" href="{% url 'qr_app:event_create' company.slug t.pk %}">Record maintenance</a>
+      <a class="btn btn-ghost" href="{% url 'qr_app:tank_detail' company.slug t.pk %}">Open</a>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% elif total %}
+<div class="card empty"><strong>No tanks match these filters</strong><a href="?">Clear filters</a></div>
+{% else %}
+<div class="card empty"><strong>No tanks registered yet</strong>{% if membership.is_admin %}Register a tank to generate its QR code and start its maintenance record.<div class="mt-4"><a class="btn btn-primary" href="{% url 'qr_app:tank_create' company.slug %}">Register tank</a></div>{% else %}Your warden has not registered any tanks.{% endif %}</div>
+{% endif %}
+{% endblock %}

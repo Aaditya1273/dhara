@@ -1,0 +1,95 @@
+{% extends 'base.html' %}{% load dhara %}
+{% block title %}{{ tank.tank_code }}{% endblock %}
+{% block content %}
+<a href="{% url 'qr_app:tank_list' company.slug %}" class="text-sm">← Tank registry</a>
+<div class="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mt-2 mb-6">
+  <div>
+    <p class="mono muted">{{ tank.tank_code }}</p>
+    <h1 class="text-3xl font-bold">{{ tank.name }}</h1>
+    <p class="muted">{{ tank.building|default:"No building set" }}{% if tank.location %} · {{ tank.location }}{% endif %}</p>
+    <div class="flex flex-wrap gap-2 mt-3">{% badge 'maintenance' tank.maintenance_status %}{% if tank.report_missing %}<span class="badge badge-warn">Water-quality report missing</span>{% endif %}</div>
+  </div>
+  <div class="flex flex-wrap gap-2">
+    <a class="btn btn-teal" href="{% url 'qr_app:event_create' company.slug tank.pk %}">Record maintenance</a>
+    {% if membership.is_admin %}
+      <a class="btn btn-ghost" href="{% url 'qr_app:report_create' company.slug tank.pk %}">Link water-quality report</a>
+      <a class="btn btn-ghost" href="{% url 'qr_app:tank_update' company.slug tank.pk %}">Edit</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid lg:grid-cols-3 gap-6">
+  <div class="lg:col-span-2 grid gap-6">
+    <section class="card" aria-labelledby="maint-h">
+      <div class="card-pad pb-2"><p class="eyebrow">Maintenance</p><h2 id="maint-h" class="text-lg font-bold">Maintenance events</h2>
+        <p class="text-sm muted">Each event keeps its claimed work date, the server's submission time, its evidence and its review decision separately.</p></div>
+      {% if events %}
+      <div class="overflow-x-auto"><table class="table">
+        <thead><tr><th>Work date</th><th>Type</th><th>Submitted</th><th>Evidence</th><th>Review</th></tr></thead>
+        <tbody>{% for e in events %}
+          <tr>
+            <td><a href="{% url 'qr_app:event_detail' company.slug e.pk %}" class="font-semibold">{{ e.work_date|date:"d M Y" }}</a>{% if e.amends_id %}<div class="text-xs muted">corrects #{{ e.amends_id }}</div>{% endif %}</td>
+            <td>{{ e.get_event_type_display }}</td>
+            <td class="text-xs">{{ e.author.email }}<div class="muted">{{ e.created_at|date:"d M Y, H:i" }}</div></td>
+            <td>{% if e.evidence_count %}<span class="badge badge-good">{{ e.evidence_count }} file{{ e.evidence_count|pluralize }}</span>{% else %}{% badge 'evidence' 'missing' %}{% endif %}</td>
+            <td>{% badge 'review' e.review_status %}</td>
+          </tr>
+        {% endfor %}</tbody></table></div>
+      {% else %}
+        <div class="empty"><strong>No maintenance recorded yet</strong>Use <em>Record maintenance</em> after cleaning, disinfection, inspection or repair.</div>
+      {% endif %}
+    </section>
+
+    <section class="card" aria-labelledby="wq-h">
+      <div class="card-pad pb-2"><p class="eyebrow">Water quality — separate from maintenance</p><h2 id="wq-h" class="text-lg font-bold">Laboratory reports</h2>
+        <p class="text-sm muted">A report applies only to the sample, date and parameters it lists. Accepting maintenance does not change this section, and this section does not change maintenance status.</p></div>
+      {% if reports %}
+      <div class="overflow-x-auto"><table class="table">
+        <thead><tr><th>Sample date</th><th>Laboratory</th><th>Parameters / results as reported</th><th>Status</th></tr></thead>
+        <tbody>{% for r in reports %}
+          <tr>
+            <td class="whitespace-nowrap">{{ r.sample_date|date:"d M Y" }}{% if r.report_date %}<div class="text-xs muted">report {{ r.report_date|date:"d M Y" }}</div>{% endif %}</td>
+            <td>{{ r.lab_name }}<div><a class="text-xs" href="{% url 'qr_app:report_file' company.slug r.pk %}" target="_blank" rel="noopener">Open original</a></div></td>
+            <td class="text-sm">{{ r.parameters|default:"—" }}{% if r.results_summary %}<div class="text-xs muted mt-1">{{ r.results_summary|linebreaksbr }}</div>{% endif %}</td>
+            <td>{% badge 'report' r.review_status %}{% if r.reviewed_by %}<div class="text-xs muted mt-1">{{ r.reviewed_by.email }}, {{ r.reviewed_at|date:"d M Y" }}</div>{% elif membership.is_admin %}
+              <form method="post" action="{% url 'qr_app:report_review' company.slug r.pk %}" class="mt-1" data-once>{% csrf_token %}<button class="text-xs underline" type="submit">Mark reviewed</button></form>{% endif %}</td>
+          </tr>
+        {% endfor %}</tbody></table></div>
+      {% else %}
+        <div class="empty"><strong>No water-quality report linked.</strong>This is a documentation gap, not a finding about the water.</div>
+      {% endif %}
+    </section>
+  </div>
+
+  <aside class="grid gap-6 content-start">
+    <section class="card card-pad text-center">
+      <p class="eyebrow mb-2">Tank QR code</p>
+      <img src="{% url 'qr_app:tank_qr' company.slug tank.pk %}" alt="QR code linking to the public status page of {{ tank.tank_code }}" class="mx-auto" width="200" height="200">
+      <p class="text-xs muted mt-2 break-all">{{ public_url }}</p>
+      <div class="flex gap-2 justify-center mt-3">
+        <a class="btn btn-ghost" href="{% url 'qr_app:tank_qr' company.slug tank.pk %}?download=1">Download PNG</a>
+        <a class="btn btn-ghost" href="{{ public_url }}" target="_blank" rel="noopener">Open public page</a>
+      </div>
+    </section>
+    <section class="card card-pad">
+      <h2 class="font-bold mb-3">Schedule</h2>
+      <dl class="grid gap-2 text-sm">
+        <div class="flex justify-between gap-2"><dt class="muted">Maintenance interval</dt><dd>every {{ tank.maintenance_interval_days }} days</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">Last accepted maintenance</dt><dd>{{ tank.last_accepted_date|date:"d M Y"|default:"None on record" }}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">Last recorded (any status)</dt><dd>{{ tank.last_recorded_date|date:"d M Y"|default:"—" }}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">Next due</dt><dd>{{ tank.next_due_date|date:"d M Y"|default:"Now" }}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">Report expected</dt><dd>{% if tank.report_interval_days %}every {{ tank.report_interval_days }} days{% else %}No policy set{% endif %}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">Responsible</dt><dd>{{ tank.responsible.email|default:"Unassigned" }}</dd></div>
+        <div class="flex justify-between gap-2"><dt class="muted">Capacity</dt><dd>{% if tank.capacity_litres %}{{ tank.capacity_litres }} L{% else %}—{% endif %}</dd></div>
+      </dl>
+    </section>
+    <section class="card card-pad">
+      <h2 class="font-bold mb-3">Open follow-ups</h2>
+      {% for t in followups %}
+        <div class="py-2 border-b last:border-0 text-sm" style="border-color:var(--line)">{{ t.title }}<div class="text-xs muted">due {{ t.due_date|date:"d M Y" }} · {{ t.assigned_to.email|default:"unassigned" }}</div></div>
+      {% empty %}<p class="text-sm muted">None open.</p>{% endfor %}
+      <a class="text-sm block mt-3" href="{% url 'qr_app:followup_list' company.slug %}">Manage follow-ups →</a>
+    </section>
+  </aside>
+</div>
+{% endblock %}

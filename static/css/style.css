@@ -1,200 +1,79 @@
-/* static/css/style.css (v2 - Professional Grade) */
-
-/* 1. Переменные: Вся цветовая палитра в одном месте */
+/* DHARA design tokens and components. Layout utilities come from Tailwind. */
 :root {
-    --color-primary: #4f46e5;
-    --color-primary-hover: #4338ca;
+  --river-900: #0b2a3f; --river-800: #0f3a56; --river-700: #144b6e; --river-600: #1b5f8a;
+  --teal-600: #0e7c7b; --teal-500: #129694; --teal-50: #e8f5f4;
+  --paper: #f7f7f3; --surface: #ffffff; --line: #e3e5e1; --ink: #17212b; --muted: #5b6672;
+  --good: #1f7a4d; --good-bg: #e6f4ec; --warn: #8a5a00; --warn-bg: #fdf3dc;
+  --bad: #a32b2b; --bad-bg: #fbe9e7; --info: #1b5f8a; --info-bg: #e6f0f7;
+  --radius: 12px; --radius-sm: 8px;
+  --shadow: 0 1px 2px rgba(15, 35, 50, .06), 0 1px 3px rgba(15, 35, 50, .04);
+}
+html { -webkit-text-size-adjust: 100%; }
+body { background: var(--paper); color: var(--ink); font-family: 'Inter', system-ui, sans-serif; }
+h1, h2, h3, .font-display { font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif; letter-spacing: -0.01em; }
+a { color: var(--river-600); }
+:focus-visible { outline: 3px solid var(--teal-500); outline-offset: 2px; border-radius: 4px; }
 
-    --color-success: #16a34a;
-    --color-warning: #d97706;
-    --color-error: #dc2626;
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.card-pad { padding: 1.25rem; }
+@media (min-width: 640px) { .card-pad { padding: 1.5rem; } }
+.muted { color: var(--muted); }
+.eyebrow { font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 
-    --color-neutral-100: #f3f4f6; /* Светлый фон */
-    --color-neutral-200: #e5e7eb; /* Границы */
-    --color-neutral-300: #d1d5db; /* Фон кнопок при наведении */
-    --color-neutral-500: #6b7280; /* Вторичный текст */
-    --color-neutral-700: #374151; /* Основной текст */
-    --color-neutral-900: #111827; /* Заголовки */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; padding: .55rem 1rem;
+  border-radius: var(--radius-sm); font-weight: 600; font-size: .875rem; border: 1px solid transparent;
+  text-decoration: none; cursor: pointer; transition: background-color .15s, border-color .15s; min-height: 40px; }
+.btn-primary { background: var(--river-700); color: #fff; }
+.btn-primary:hover { background: var(--river-800); }
+.btn-teal { background: var(--teal-600); color: #fff; }
+.btn-teal:hover { background: #0b6867; }
+.btn-ghost { background: var(--surface); color: var(--ink); border-color: var(--line); }
+.btn-ghost:hover { border-color: #c9cdc7; background: #fbfbf9; }
+.btn-danger { background: var(--bad); color: #fff; }
+.btn[disabled], .btn.is-busy { opacity: .6; cursor: progress; }
 
-    --color-white: #ffffff;
-    --color-black: #000000;
-}
+.badge { display: inline-flex; align-items: center; gap: .3rem; padding: .15rem .55rem; border-radius: 999px;
+  font-size: .75rem; font-weight: 600; white-space: nowrap; border: 1px solid transparent; }
+.badge::before { content: ''; width: .45rem; height: .45rem; border-radius: 999px; background: currentColor; }
+.badge-good { color: var(--good); background: var(--good-bg); }
+.badge-warn { color: var(--warn); background: var(--warn-bg); }
+.badge-bad { color: var(--bad); background: var(--bad-bg); }
+.badge-info { color: var(--info); background: var(--info-bg); }
+.badge-neutral { color: var(--muted); background: #eef0ed; }
 
-/* 2. Глобальные стили и сбросы */
-*, *::before, *::after {
-    box-sizing: border-box;
-}
+.notice { border-radius: var(--radius-sm); padding: .85rem 1rem; font-size: .875rem; border: 1px solid; }
+.notice-success { background: var(--good-bg); color: var(--good); border-color: #bfe3cd; }
+.notice-error { background: var(--bad-bg); color: var(--bad); border-color: #f1c4bf; }
+.notice-warning { background: var(--warn-bg); color: var(--warn); border-color: #f0dca8; }
+.notice-info { background: var(--info-bg); color: var(--info); border-color: #c4dbea; }
+.disclaimer { background: var(--teal-50); border: 1px solid #bfe1df; border-left: 4px solid var(--teal-600);
+  border-radius: var(--radius-sm); padding: .9rem 1rem; color: #0d4e4d; font-size: .9rem; }
 
-body {
-    background-color: var(--color-neutral-100);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-    color: var(--color-neutral-700);
-    margin: 0;
-    line-height: 1.6;
-}
+.field { margin-bottom: 1rem; }
+.field label { display: block; font-weight: 600; font-size: .875rem; margin-bottom: .3rem; }
+.field input[type=text], .field input[type=email], .field input[type=password], .field input[type=number],
+.field input[type=date], .field input[type=search], .field select, .field textarea {
+  width: 100%; border: 1px solid #cfd4cf; border-radius: var(--radius-sm); padding: .55rem .7rem; background: #fff;
+  font-size: 1rem; min-height: 42px; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--teal-600); outline: 2px solid var(--teal-50); }
+.field input[type=file] { display: block; width: 100%; font-size: .875rem; padding: .5rem; border: 1px dashed #cfd4cf;
+  border-radius: var(--radius-sm); background: #fbfbf9; }
+.field .help { font-size: .8rem; color: var(--muted); margin-top: .25rem; }
+.field .error { font-size: .8rem; color: var(--bad); margin-top: .25rem; font-weight: 600; }
+.field.has-error input, .field.has-error select, .field.has-error textarea { border-color: var(--bad); }
+.field ul.radio { display: grid; gap: .4rem; }
+.field ul.radio label { font-weight: 500; display: flex; gap: .5rem; align-items: center; padding: .5rem .7rem;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: #fff; cursor: pointer; }
 
-main {
-    max-width: 1280px;
-    margin: 0 auto;
-    padding: 2rem 1rem;
-}
-
-a {
-    color: var(--color-primary);
-    text-decoration: none;
-    transition: color 0.2s;
-}
-a:hover {
-    color: var(--color-primary-hover);
-    text-decoration: underline;
-}
-
-/* 3. Типографика */
-h1, h2, h3 {
-    color: var(--color-neutral-900);
-    line-height: 1.2;
-    margin-top: 0;
-    margin-bottom: 1rem;
-}
-h1 { font-size: 2.25rem; font-weight: 700; } /* 36px */
-h2 { font-size: 1.5rem;  font-weight: 600; } /* 24px */
-h3 { font-size: 1.25rem; font-weight: 600; } /* 20px */
-
-p {
-    margin-top: 0;
-    margin-bottom: 1rem;
-}
-
-/* 4. Компоненты */
-
-/* Карточка */
-.card {
-    background-color: var(--color-white);
-    padding: 1.5rem;
-    border-radius: 0.5rem;
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-}
-
-/* Кнопки */
-.btn {
-    display: inline-block;
-    text-align: center;
-    padding: 0.75rem 1.5rem;
-    border-radius: 0.5rem;
-    font-weight: 600;
-    border: none;
-    cursor: pointer;
-    transition: background-color 0.2s, transform 0.1s;
-    text-decoration: none !important;
-}
-.btn:active {
-    transform: scale(0.98);
-}
-.btn-primary {
-    background-color: var(--color-primary);
-    color: var(--color-white);
-}
-.btn-primary:hover { background-color: var(--color-primary-hover); }
-
-.btn-secondary {
-    background-color: var(--color-neutral-200);
-    color: var(--color-neutral-900);
-}
-.btn-secondary:hover { background-color: var(--color-neutral-300); }
-
-/* Уведомления */
-.alert {
-    padding: 1rem;
-    margin-bottom: 1.5rem;
-    border-radius: 0.375rem;
-    border: 1px solid transparent;
-}
-.alert-warning {
-    background-color: #fefce8;
-    color: #a16207;
-    border-color: #fef08a;
-}
-.alert-success {
-    background-color: #f0fdf4;
-    color: #15803d;
-    border-color: #bbf7d0;
-}
-.alert-error {
-    background-color: #fef2f2;
-    color: #b91c1c;
-    border-color: #fecaca;
-}
-
-/* 5. Формы - САМОЕ ВАЖНОЕ ДОБАВЛЕНИЕ */
-.form-group {
-    margin-bottom: 1.25rem;
-}
-.form-label {
-    display: block;
-    font-weight: 500;
-    margin-bottom: 0.5rem;
-    color: var(--color-neutral-900);
-}
-.form-control {
-    display: block;
-    width: 100%;
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--color-neutral-300);
-    border-radius: 0.5rem;
-    background-color: var(--color-white);
-    transition: border-color 0.2s, box-shadow 0.2s;
-    font-size: 1rem;
-}
-.form-control:focus {
-    outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
-}
-.form-error {
-    color: var(--color-error);
-    font-size: 0.875rem;
-    margin-top: 0.25rem;
-}
-
-/* 6. Навигация */
-.navbar {
-    background-color: var(--color-white);
-    padding: 1rem 1.5rem;
-    box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-.navbar-brand {
-    font-weight: 700;
-    font-size: 1.5rem;
-    color: var(--color-neutral-900);
-}
-.navbar-menu a {
-    color: var(--color-neutral-700);
-    margin-left: 1.5rem;
-    font-weight: 500;
-}
-
-/* 7. Вспомогательные классы */
-.grid { display: grid; gap: 1.5rem; }
-.grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
-.grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
-.col-span-2 { grid-column: span 2; }
-.mt-8 { margin-top: 2rem; }
-.mb-6 { margin-bottom: 1.5rem; }
-
-/* 8. Адаптивность */
-@media (max-width: 768px) {
-    .grid-cols-2,
-    .grid-cols-3 {
-        grid-template-columns: 1fr; /* Все колонки в один ряд на мобильных */
-    }
-    .col-span-2 {
-        grid-column: span 1;
-    }
-    .navbar {
-        flex-direction: column;
-        gap: 1rem;
-    }
-}
+.table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+.table th { text-align: left; font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: uppercase;
+  letter-spacing: .04em; padding: .6rem .75rem; border-bottom: 1px solid var(--line); }
+.table td { padding: .75rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.table tr:last-child td { border-bottom: 0; }
+.empty { text-align: center; padding: 2.5rem 1rem; color: var(--muted); }
+.empty strong { display: block; color: var(--ink); font-size: 1rem; margin-bottom: .25rem; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; word-break: break-all; }
+.nav-link { color: #cfe0ea; font-weight: 500; font-size: .875rem; padding: .45rem .7rem; border-radius: 8px; text-decoration: none; }
+.nav-link:hover { color: #fff; background: rgba(255,255,255,.08); }
+.nav-link.active { color: #fff; background: rgba(255,255,255,.14); }
+.stat { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 2rem; font-weight: 700; line-height: 1.1; }

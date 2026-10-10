@@ -1,0 +1,32 @@
+{% extends 'base.html' %}{% load dhara %}
+{% block title %}Water quality{% endblock %}
+{% block content %}
+<h1 class="text-3xl font-bold mb-1">Water-quality reports</h1>
+<p class="muted text-sm mb-6">Laboratory reports are stored separately from maintenance. DHARA shows what each report states; it does not interpret results or certify water as safe.</p>
+
+{% if missing %}
+<section class="card card-pad mb-6">
+  <h2 class="font-bold mb-2">Expected by policy but not current</h2>
+  <ul class="grid gap-2 text-sm">{% for t in missing %}
+    <li class="flex flex-wrap justify-between gap-2"><span><a href="{% url 'qr_app:tank_detail' company.slug t.pk %}" class="font-semibold">{{ t.tank_code }}</a> · {% if t.last_sample_date %}last sample {{ t.last_sample_date|date:"d M Y" }}, expected every {{ t.report_interval_days }} days{% else %}No water-quality report linked.{% endif %}</span>
+      {% if membership.is_admin %}<a href="{% url 'qr_app:report_create' company.slug t.pk %}">Link report →</a>{% endif %}</li>
+  {% endfor %}</ul>
+  <p class="text-xs muted mt-3">A missing report is a documentation gap. It is not evidence of contamination.</p>
+</section>
+{% endif %}
+
+<section class="card overflow-x-auto">
+  {% if reports %}
+  <table class="table">
+    <thead><tr><th>Tank</th><th>Sample date</th><th>Laboratory</th><th>Parameters</th><th>Status</th><th></th></tr></thead>
+    <tbody>{% for r in reports %}
+      <tr><td><a href="{% url 'qr_app:tank_detail' company.slug r.equipment_id %}" class="font-semibold">{{ r.equipment.tank_code }}</a></td>
+        <td class="whitespace-nowrap">{{ r.sample_date|date:"d M Y" }}</td><td>{{ r.lab_name }}</td><td class="text-sm">{{ r.parameters|default:"—" }}</td>
+        <td>{% badge 'report' r.review_status %}</td>
+        <td><a class="text-sm" href="{% url 'qr_app:report_file' company.slug r.pk %}" target="_blank" rel="noopener">Original</a></td></tr>
+    {% endfor %}</tbody>
+  </table>
+  {% else %}<div class="empty"><strong>No water-quality report linked.</strong>{% if membership.is_admin %}Open a tank and choose <em>Link water-quality report</em>.{% endif %}</div>{% endif %}
+</section>
+{% if no_policy %}<p class="text-xs muted mt-4">{{ no_policy|length }} tank{{ no_policy|pluralize }} ha{{ no_policy|pluralize:"s,ve" }} no report policy and no report. Set an expected interval on the tank to track gaps.</p>{% endif %}
+{% endblock %}

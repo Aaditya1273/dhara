@@ -1,132 +1,103 @@
-{% load static %}
-<!DOCTYPE html>
-<html lang="ru">
+{% load static %}<!DOCTYPE html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}QR Service Platform{% endblock %}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'primary': { 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd', 400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 800: '#1e40af', 900: '#1e3a8a' },
-                        'secondary': { 50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1', 400: '#94a3b8', 500: '#64748b', 600: '#475569', 700: '#334155', 800: '#1e293b', 900: '#0f172a' }
-                    }
-                }
-            }
-        }
-    </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}DHARA{% endblock %} · DHARA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700&display=swap">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <link rel="stylesheet" href="{% static 'css/style.css' %}">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3C16 3 6 14 6 20a10 10 0 0 0 20 0C26 14 16 3 16 3z' fill='%230e7c7b'/%3E%3C/svg%3E">
 </head>
-<body class="bg-gray-100">
-<div x-data="{ isMobileMenuOpen: false, isProfileOpen: false }">
-    <nav class="bg-white shadow-md sticky top-0 z-40">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between h-16">
-                <div class="flex-shrink-0 flex items-center">
-                    <a href="{% if user.is_authenticated %}{% url 'select_company' %}{% else %}{% url 'landing_page' %}{% endif %}" class="text-xl font-bold text-primary-600">QR Invent</a>
-                </div>
+<body class="min-h-screen flex flex-col">
+<a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:m-2 focus:p-2 focus:bg-white">Skip to content</a>
+<header x-data="{ open: false }" style="background: var(--river-900)" class="text-white">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16 gap-4">
+    <a href="{% if user.is_authenticated %}{% url 'select_company' %}{% else %}{% url 'landing_page' %}{% endif %}" class="flex items-center gap-2 text-white no-underline">
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3C16 3 6 14 6 20a10 10 0 0 0 20 0C26 14 16 3 16 3z" fill="#129694"/><path d="M11 21a5 5 0 0 0 5 5" stroke="#e8f5f4" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      <span class="font-display font-bold tracking-wide text-lg">DHARA</span>
+      {% if company %}<span class="hidden md:inline text-sm" style="color:#9fbfd2">/ {{ company.name }}</span>{% endif %}
+    </a>
+    {% if user.is_authenticated and company %}
+      {% with u=request.resolver_match.url_name %}
+      <nav class="hidden lg:flex items-center gap-1" aria-label="Main">
+        <a class="nav-link {% if u == 'dashboard' %}active{% endif %}" href="{% url 'qr_app:dashboard' company.slug %}">Overview</a>
+        <a class="nav-link {% if 'tank' in u or 'event' in u or u == 'report_create' %}active{% endif %}" href="{% url 'qr_app:tank_list' company.slug %}">Tanks</a>
+        {% if membership.is_admin %}<a class="nav-link {% if u == 'review_queue' %}active{% endif %}" href="{% url 'qr_app:review_queue' company.slug %}">Review queue</a>{% endif %}
+        <a class="nav-link {% if u == 'report_list' %}active{% endif %}" href="{% url 'qr_app:report_list' company.slug %}">Water quality</a>
+        <a class="nav-link {% if 'followup' in u %}active{% endif %}" href="{% url 'qr_app:followup_list' company.slug %}">Follow-ups</a>
+        {% if membership.is_admin %}
+          <a class="nav-link {% if u == 'activity_history' %}active{% endif %}" href="{% url 'qr_app:activity_history' company.slug %}">Activity</a>
+          <a class="nav-link {% if 'team' in u or 'member' in u %}active{% endif %}" href="{% url 'qr_app:manage_team' company.slug %}">Team</a>
+        {% endif %}
+      </nav>
+      {% endwith %}
+    {% endif %}
+    <div class="flex items-center gap-2">
+      {% if user.is_authenticated %}
+        <span class="hidden sm:flex flex-col text-right leading-tight">
+          <span class="text-sm">{{ user.email }}</span>
+          {% if membership %}<span class="text-xs" style="color:#9fbfd2">{{ membership.get_role_display }}</span>{% endif %}
+        </span>
+        {% if company and membership.is_admin %}<a class="nav-link hidden lg:inline" href="{% url 'qr_app:company_settings' company.slug %}" aria-label="Institution settings">Settings</a>{% endif %}
+        <form action="{% url 'logout' %}" method="post" class="hidden lg:block">{% csrf_token %}<button class="nav-link" type="submit">Sign out</button></form>
+        <button @click="open = !open" class="lg:hidden nav-link" :aria-expanded="open" aria-controls="mobile-nav" aria-label="Menu">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+      {% else %}
+        <a class="nav-link" href="{% url 'login' %}">Sign in</a>
+        <a class="btn btn-teal" href="{% url 'register' %}">Register institution</a>
+      {% endif %}
+    </div>
+  </div>
+  {% if user.is_authenticated %}
+  <nav id="mobile-nav" x-show="open" x-cloak class="lg:hidden px-4 pb-4 grid gap-1" aria-label="Mobile">
+    {% if company %}
+      <a class="nav-link" href="{% url 'qr_app:dashboard' company.slug %}">Overview</a>
+      <a class="nav-link" href="{% url 'qr_app:tank_list' company.slug %}">Tanks</a>
+      {% if membership.is_admin %}<a class="nav-link" href="{% url 'qr_app:review_queue' company.slug %}">Review queue</a>{% endif %}
+      <a class="nav-link" href="{% url 'qr_app:report_list' company.slug %}">Water quality</a>
+      <a class="nav-link" href="{% url 'qr_app:followup_list' company.slug %}">Follow-ups</a>
+      {% if membership.is_admin %}
+        <a class="nav-link" href="{% url 'qr_app:activity_history' company.slug %}">Activity</a>
+        <a class="nav-link" href="{% url 'qr_app:manage_team' company.slug %}">Team</a>
+        <a class="nav-link" href="{% url 'qr_app:company_settings' company.slug %}">Settings</a>
+      {% endif %}
+    {% endif %}
+    <form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="nav-link w-full text-left" type="submit">Sign out ({{ user.email }})</button></form>
+  </nav>
+  {% endif %}
+</header>
 
-                <!-- Центральная часть: Навигация для десктопов -->
-                <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
-                    {% if user.is_authenticated and company %}
-                        {% with current_url_name=request.resolver_match.url_name %}
-                            <a href="{% url 'qr_app:dashboard' company_slug=company.slug %}" class="inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium {% if current_url_name == 'dashboard' %}border-primary-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %}">Панель управления</a>
-                            <a href="{% url 'qr_app:equipment_list' company_slug=company.slug %}" class="inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium {% if 'equipment_' in current_url_name or 'generate_qr_code' in current_url_name %}border-primary-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %}">Оборудование</a>
-                            {% if user.is_admin %}
-                                <a href="{% url 'qr_app:template_list' company_slug=company.slug %}" class="inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium {% if 'template_' in current_url_name %}border-primary-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %}">Шаблоны</a>
-                                <a href="{% url 'qr_app:manage_team' company_slug=company.slug %}" class="inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium {% if 'manage_team' in current_url_name or 'member_' in current_url_name %}border-primary-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %}">Команда</a>
-                            {% endif %}
-                        {% endwith %}
-                    {% endif %}
-                </div>
+<main id="main" class="flex-1 py-6 sm:py-10">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    {% if messages %}
+      <div class="mb-6 grid gap-2" aria-live="polite">
+        {% for message in messages %}<div class="notice notice-{{ message.tags|default:'info' }}" role="status">{{ message }}</div>{% endfor %}
+      </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </div>
+</main>
 
-                <!-- Правая часть: Меню профиля и бургер -->
-                <div class="flex items-center">
-                    {% if user.is_authenticated %}
-                        <!-- Меню профиля для десктопов -->
-                        <div class="relative ml-3">
-                            <div>
-                                <button @click="isProfileOpen = !isProfileOpen" type="button" class="flex items-center max-w-xs bg-white rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500" id="user-menu-button" aria-expanded="false" aria-haspopup="true">
-                                    <span class="sr-only">Открыть меню пользователя</span>
-                                    <span class="inline-flex items-center justify-center h-8 w-8 rounded-full bg-gray-200 text-gray-600 font-bold">{{ user.email|first|upper }}</span>
-                                    <span class="hidden sm:block ml-2 text-gray-700">{{ user.email }}</span>
-                                    <svg class="hidden sm:block ml-1 h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-                                </button>
-                            </div>
-                            <div x-show="isProfileOpen" @click.away="isProfileOpen = false" x-transition class="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none" role="menu" aria-orientation="vertical" aria-labelledby="user-menu-button">
-                                <div class="py-1" role="none">
-                                    <div class="px-4 py-2 border-b">
-                                        <p class="text-sm text-gray-500" role="none">Вы вошли как</p>
-                                        <p class="text-sm font-medium text-gray-800 truncate" role="none">{{ user.email }}</p>
-                                    </div>
-                                    <form action="{% url 'logout' %}" method="post" role="none">
-                                        {% csrf_token %}
-                                        <button type="submit" class="w-full text-left block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem">Выйти</button>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Кнопка "Бургер" -->
-                        <div class="ml-2 flex items-center sm:hidden">
-                            <button @click="isMobileMenuOpen = !isMobileMenuOpen" type="button" class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500" aria-controls="mobile-menu" aria-expanded="false">
-                                <span class="sr-only">Открыть меню</span>
-                                <svg x-show="!isMobileMenuOpen" class="block h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-                                <svg x-show="isMobileMenuOpen" class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                            </button>
-                        </div>
-                    {% else %}
-                        <!-- Кнопки для неавторизованных пользователей -->
-                        <a href="{% url 'login' %}" class="text-gray-600 hover:text-gray-800 mr-4">Войти</a>
-                        <a href="{% url 'register' %}" class="px-3 py-2 rounded-md text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">Регистрация</a>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Мобильное меню -->
-        <div x-show="isMobileMenuOpen" @click.away="isMobileMenuOpen = false" class="sm:hidden" id="mobile-menu">
-            {% if user.is_authenticated %}
-                <div class="pt-2 pb-3 space-y-1">
-                    {% if company %}
-                        {% with current_url_name=request.resolver_match.url_name %}
-                            <a href="{% url 'qr_app:dashboard' company_slug=company.slug %}" class="block pl-3 pr-4 py-2 border-l-4 text-base font-medium {% if current_url_name == 'dashboard' %}border-primary-500 bg-primary-50 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %}">Панель управления</a>
-                            <a href="{% url 'qr_app:equipment_list' company_slug=company.slug %}" class="block pl-3 pr-4 py-2 border-l-4 text-base font-medium {% if 'equipment_' in current_url_name or 'generate_qr_code' in current_url_name %}border-primary-500 bg-primary-50 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %}">Оборудование</a>
-                            {% if user.is_admin %}
-                                <a href="{% url 'qr_app:template_list' company_slug=company.slug %}" class="block pl-3 pr-4 py-2 border-l-4 text-base font-medium {% if 'template_' in current_url_name %}border-primary-500 bg-primary-50 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %}">Шаблоны</a>
-                                <a href="{% url 'qr_app:manage_team' company_slug=company.slug %}" class="block pl-3 pr-4 py-2 border-l-4 text-base font-medium {% if 'manage_team' in current_url_name or 'member_' in current_url_name %}border-primary-500 bg-primary-50 text-primary-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %}">Команда</a>
-                            {% endif %}
-                        {% endwith %}
-                    {% else %}
-                        <a href="{% url 'select_company' %}" class="block pl-3 pr-4 py-2 border-l-4 border-primary-500 bg-primary-50 text-primary-700 text-base font-medium">Панель управления</a>
-                    {% endif %}
-                </div>
-
-            {% endif %}
-        </div>
-    </nav>
-
-    {% block main_content %}
-        <main class="py-6 sm:py-10">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                {% if messages %}
-                    <div class="mb-6 space-y-3">
-                        {% for message in messages %}
-                            <div class="p-4 rounded-md text-sm {% if message.tags == 'error' %}bg-red-100 text-red-800 border border-red-200{% elif message.tags == 'info' %}bg-blue-100 text-blue-800 border border-blue-200{% else %}bg-green-100 text-green-800 border border-green-200{% endif %}" role="alert">
-                                {{ message|safe }}
-                            </div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-
-                {% block content %}{% endblock %}
-            </div>
-        </main>
-    {% endblock main_content %}
-</div>
+<footer class="border-t py-6 text-sm muted" style="border-color: var(--line)">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row gap-2 justify-between">
+    <span>DHARA — Institutional Water Evidence Ledger</span>
+    <span>Maintenance records are not a certification that water is safe to drink.</span>
+  </div>
+</footer>
+<style>[x-cloak]{display:none!important}</style>
+<script>
+  // Prevent duplicate submissions on consequential forms.
+  document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (!f.matches('form[data-once]')) return;
+    if (f.dataset.sent) { e.preventDefault(); return; }
+    f.dataset.sent = '1';
+    f.querySelectorAll('button[type=submit]').forEach(function (b) { b.classList.add('is-busy'); b.setAttribute('aria-busy', 'true'); });
+  });
+</script>
 </body>
 </html>

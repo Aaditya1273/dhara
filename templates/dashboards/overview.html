@@ -1,0 +1,72 @@
+{% extends 'base.html' %}{% load dhara %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+  <div>
+    <p class="eyebrow">{{ company.name }}</p>
+    <h1 class="text-3xl font-bold">Overview</h1>
+  </div>
+  <div class="flex gap-2">
+    {% if membership.is_admin %}<a class="btn btn-primary" href="{% url 'qr_app:tank_create' company.slug %}">Register tank</a>{% endif %}
+    <a class="btn btn-ghost" href="{% url 'qr_app:tank_list' company.slug %}">All tanks</a>
+  </div>
+</div>
+
+<section class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8" aria-label="Key figures">
+  <a href="{% url 'qr_app:tank_list' company.slug %}" class="card card-pad no-underline" style="color:var(--ink)"><p class="eyebrow">Registered tanks</p><p class="stat mt-1">{{ tank_count }}</p></a>
+  <a href="{% url 'qr_app:tank_list' company.slug %}?status=attention" class="card card-pad no-underline" style="color:var(--ink)"><p class="eyebrow">Need maintenance</p><p class="stat mt-1" {% if overdue_count %}style="color:var(--bad)"{% endif %}>{{ overdue_count }}</p><p class="text-xs muted">overdue or none accepted</p></a>
+  <a href="{% url 'qr_app:tank_list' company.slug %}?status=due_soon" class="card card-pad no-underline" style="color:var(--ink)"><p class="eyebrow">Due in 14 days</p><p class="stat mt-1">{{ due_soon_count }}</p></a>
+  <a href="{% if membership.is_admin %}{% url 'qr_app:review_queue' company.slug %}{% else %}#mine{% endif %}" class="card card-pad no-underline" style="color:var(--ink)"><p class="eyebrow">Awaiting review</p><p class="stat mt-1">{{ pending_count }}</p>{% if pending_no_evidence_count %}<p class="text-xs" style="color:var(--warn)">{{ pending_no_evidence_count }} without evidence</p>{% endif %}</a>
+  <a href="{% url 'qr_app:report_list' company.slug %}" class="card card-pad no-underline col-span-2 lg:col-span-1" style="color:var(--ink)"><p class="eyebrow">Reports missing</p><p class="stat mt-1">{{ missing_report_count }}</p><p class="text-xs muted">per configured policy</p></a>
+</section>
+
+<div class="grid lg:grid-cols-3 gap-6">
+  <section class="lg:col-span-2 card">
+    <div class="card-pad pb-2 flex justify-between items-center"><h2 class="text-lg font-bold">Tanks needing attention</h2>
+      <a class="text-sm" href="{% url 'qr_app:followup_list' company.slug %}">{{ open_task_count }} open follow-up{{ open_task_count|pluralize }} →</a></div>
+    {% if attention %}
+      <div class="overflow-x-auto"><table class="table">
+        <thead><tr><th>Tank</th><th>Maintenance</th><th>Water-quality report</th></tr></thead>
+        <tbody>{% for t in attention %}
+          <tr><td><a href="{% url 'qr_app:tank_detail' company.slug t.pk %}" class="font-semibold">{{ t.tank_code }}</a><div class="muted text-xs">{{ t.name }}{% if t.building %} · {{ t.building }}{% endif %}</div></td>
+            <td>{% badge 'maintenance' t.maintenance_status %}{% if t.next_due_date %}<div class="text-xs muted mt-1">due {{ t.next_due_date|date:"d M Y" }}</div>{% endif %}</td>
+            <td>{% if t.report_missing %}<span class="badge badge-warn">No current report linked</span>{% elif t.last_sample_date %}<span class="text-xs muted">sample {{ t.last_sample_date|date:"d M Y" }}</span>{% else %}<span class="text-xs muted">No report expected by policy</span>{% endif %}</td></tr>
+        {% endfor %}</tbody></table></div>
+    {% elif tank_count %}
+      <div class="empty"><strong>Nothing needs attention right now</strong>All tanks are within their configured schedule.</div>
+    {% else %}
+      <div class="empty"><strong>No tanks registered yet</strong>{% if membership.is_admin %}<a href="{% url 'qr_app:tank_create' company.slug %}">Register your first tank</a> to start tracking maintenance.{% else %}Ask your warden to register tanks.{% endif %}</div>
+    {% endif %}
+  </section>
+
+  <section class="card card-pad">
+    <h2 class="text-lg font-bold mb-3">Assigned to you</h2>
+    {% for task in my_tasks %}
+      <div class="py-2 border-b last:border-0" style="border-color:var(--line)">
+        <p class="text-sm font-medium">{{ task.title }}</p>
+        <p class="text-xs {% if task.is_overdue %}text-red-700{% else %}muted{% endif %}">{{ task.equipment.tank_code }} · due {{ task.due_date|date:"d M Y" }}</p>
+      </div>
+    {% empty %}
+      <p class="muted text-sm">No open follow-ups are assigned to you.</p>
+    {% endfor %}
+    <a class="btn btn-ghost w-full mt-4" href="{% url 'qr_app:followup_list' company.slug %}?show=mine">My follow-ups</a>
+  </section>
+</div>
+
+<div class="grid lg:grid-cols-2 gap-6 mt-6">
+  <section class="card" id="mine">
+    <div class="card-pad pb-2"><h2 class="text-lg font-bold">Your recent submissions</h2></div>
+    {% if my_events %}<table class="table"><tbody>{% for e in my_events %}
+      <tr><td><a href="{% url 'qr_app:event_detail' company.slug e.pk %}">{{ e.get_event_type_display }} · {{ e.equipment.tank_code }}</a><div class="text-xs muted">work date {{ e.work_date|date:"d M Y" }}</div></td><td class="text-right">{% badge 'review' e.review_status %}</td></tr>
+    {% endfor %}</tbody></table>
+    {% else %}<div class="empty">You have not submitted maintenance yet. Open a tank and choose <em>Record maintenance</em>.</div>{% endif %}
+  </section>
+  <section class="card">
+    <div class="card-pad pb-2 flex justify-between"><h2 class="text-lg font-bold">Recent activity</h2>{% if membership.is_admin %}<a class="text-sm" href="{% url 'qr_app:activity_history' company.slug %}">Full history →</a>{% endif %}</div>
+    {% if activity %}<table class="table"><tbody>{% for a in activity %}
+      <tr><td>{{ a.summary }}<div class="text-xs muted">{{ a.actor.email|default:"Schedule rule" }} · {{ a.created_at|date:"d M Y, H:i" }}</div></td></tr>
+    {% endfor %}</tbody></table>
+    {% else %}<div class="empty">No activity yet.</div>{% endif %}
+  </section>
+</div>
+{% endblock %}

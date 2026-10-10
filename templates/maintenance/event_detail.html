@@ -1,0 +1,94 @@
+{% extends 'base.html' %}{% load dhara %}
+{% block title %}Event #{{ event.pk }}{% endblock %}
+{% block content %}
+<a href="{% url 'qr_app:tank_detail' company.slug tank.pk %}" class="text-sm">← {{ tank.tank_code }} · {{ tank.name }}</a>
+<div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mt-2 mb-6">
+  <div><p class="eyebrow">Maintenance event #{{ event.pk }}</p><h1 class="text-3xl font-bold">{{ event.get_event_type_display }} · {{ event.work_date|date:"d M Y" }}</h1></div>
+  <div class="flex flex-wrap gap-2">{% badge 'evidence' event.evidence_status %}{% badge 'review' event.review_status %}</div>
+</div>
+
+<div class="grid lg:grid-cols-3 gap-6">
+  <div class="lg:col-span-2 grid gap-6 content-start">
+    <section class="card card-pad">
+      <h2 class="font-bold mb-3">Record</h2>
+      <dl class="grid sm:grid-cols-2 gap-3 text-sm">
+        <div><dt class="muted text-xs">Claimed work date</dt><dd>{{ event.work_date|date:"d M Y" }}</dd></div>
+        <div><dt class="muted text-xs">Submitted (server time)</dt><dd>{{ event.created_at|date:"d M Y, H:i" }}</dd></div>
+        <div><dt class="muted text-xs">Submitted by</dt><dd>{{ event.author.email }}</dd></div>
+        <div><dt class="muted text-xs">Technician / provider</dt><dd>{{ event.provider_name|default:"—" }}</dd></div>
+        {% if event.amends %}<div class="sm:col-span-2"><dt class="muted text-xs">Corrects</dt><dd><a href="{% url 'qr_app:event_detail' company.slug event.amends_id %}">Event #{{ event.amends_id }}</a></dd></div>{% endif %}
+        <div class="sm:col-span-2"><dt class="muted text-xs">Notes</dt><dd>{{ event.notes|default:"—"|linebreaksbr }}</dd></div>
+      </dl>
+      {% for a in amendments %}<p class="notice notice-info mt-4 text-sm">Corrected by <a href="{% url 'qr_app:event_detail' company.slug a.pk %}">event #{{ a.pk }}</a> ({{ a.get_review_status_display|lower }}).</p>{% endfor %}
+    </section>
+
+    <section class="card card-pad">
+      <h2 class="font-bold mb-1">Evidence</h2>
+      <p class="text-xs muted mb-4">SHA-256 digests are computed from the bytes received at upload. A match shows the stored file has not changed since; it does not show that a photo is genuine or what it depicts.</p>
+      {% if evidence %}
+      <div class="grid sm:grid-cols-2 gap-4">
+        {% for ev in evidence %}
+        <figure class="border rounded-lg overflow-hidden" style="border-color:var(--line)">
+          {% if ev.content_type == 'application/pdf' %}
+            <a href="{% url 'qr_app:evidence_file' company.slug ev.pk %}" target="_blank" rel="noopener" class="flex items-center justify-center h-40 bg-slate-50 font-semibold">PDF · open document</a>
+          {% else %}
+            <a href="{% url 'qr_app:evidence_file' company.slug ev.pk %}" target="_blank" rel="noopener"><img src="{% url 'qr_app:evidence_file' company.slug ev.pk %}" alt="{{ ev.get_kind_display }} for event {{ event.pk }}" class="w-full h-48 object-cover" loading="lazy"></a>
+          {% endif %}
+          <figcaption class="p-3 text-xs grid gap-1">
+            <span class="font-semibold text-sm">{{ ev.get_kind_display }}</span>
+            <span class="muted">{{ ev.original_name }} · {{ ev.size|filesizeformat }} · {{ ev.uploaded_by.email }}, {{ ev.uploaded_at|date:"d M Y H:i" }}</span>
+            <span class="mono">{{ ev.sha256 }}</span>
+            <form method="post" action="{% url 'qr_app:evidence_verify' company.slug ev.pk %}">{% csrf_token %}<button class="underline" type="submit">Re-check digest</button></form>
+          </figcaption>
+        </figure>
+        {% endfor %}
+      </div>
+      {% else %}
+        <div class="empty"><strong>No evidence attached</strong>This event cannot be accepted until evidence is added.</div>
+      {% endif %}
+    </section>
+
+    <section class="card card-pad">
+      <h2 class="font-bold mb-3">History</h2>
+      <ol class="grid gap-3 text-sm">
+        {% for h in history %}<li class="flex gap-3"><span class="mt-1 w-2 h-2 rounded-full shrink-0" style="background:var(--teal-600)"></span><span>{{ h.summary }}{% if h.details.notes %} — “{{ h.details.notes }}”{% endif %}{% if h.details.note %} — “{{ h.details.note }}”{% endif %}<span class="block text-xs muted">{{ h.actor.email|default:"system" }} · {{ h.created_at|date:"d M Y, H:i" }}</span></span></li>{% endfor %}
+      </ol>
+    </section>
+  </div>
+
+  <aside class="grid gap-6 content-start">
+    <section class="card card-pad">
+      <h2 class="font-bold mb-3">Review</h2>
+      {% if event.reviewed_by %}
+        <p class="text-sm">{% badge 'review' event.review_status %}</p>
+        <p class="text-sm mt-2">{{ event.reviewed_by.email }}<span class="block text-xs muted">{{ event.reviewed_at|date:"d M Y, H:i" }}</span></p>
+        {% if event.review_notes %}<blockquote class="mt-3 text-sm border-l-4 pl-3" style="border-color:var(--line)">{{ event.review_notes|linebreaksbr }}</blockquote>{% endif %}
+      {% elif event.review_status == 'pending' %}
+        <p class="text-sm muted">Waiting for a warden to review.</p>
+      {% endif %}
+
+      {% if can_review %}
+        <form method="post" action="{% url 'qr_app:event_review' company.slug event.pk %}" class="mt-4 border-t pt-4" style="border-color:var(--line)" data-once>{% csrf_token %}
+          {% include 'partials/form_fields.html' with form=review_form %}
+          <button class="btn btn-primary w-full" type="submit">Record decision</button>
+        </form>
+      {% elif own_event_pending and membership.is_admin %}
+        <p class="notice notice-info mt-4">You submitted this event, so another warden must review it.</p>
+      {% endif %}
+
+      {% if can_respond %}
+        <form method="post" enctype="multipart/form-data" action="{% url 'qr_app:event_respond' company.slug event.pk %}" class="mt-4 border-t pt-4" style="border-color:var(--line)" data-once>{% csrf_token %}
+          <p class="text-sm font-semibold mb-2">Respond with more evidence</p>
+          {% include 'partials/form_fields.html' with form=respond_form %}
+          <button class="btn btn-teal w-full" type="submit">Send back for review</button>
+        </form>
+      {% endif %}
+
+      {% if event.review_status == 'accepted' or event.review_status == 'rejected' %}
+        <a class="btn btn-ghost w-full mt-4" href="{% url 'qr_app:event_create' company.slug tank.pk %}?amends={{ event.pk }}">Submit a correction</a>
+        <p class="text-xs muted mt-2">Reviewed events are never edited. A correction is a new event that references this one.</p>
+      {% endif %}
+    </section>
+  </aside>
+</div>
+{% endblock %}

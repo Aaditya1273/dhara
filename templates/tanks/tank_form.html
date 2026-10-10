@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}{% if tank %}Edit {{ tank.tank_code }}{% else %}Register tank{% endif %}{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <a href="{% if tank %}{% url 'qr_app:tank_detail' company.slug tank.pk %}{% else %}{% url 'qr_app:tank_list' company.slug %}{% endif %}" class="text-sm">← Back</a>
+  <h1 class="text-3xl font-bold mt-2 mb-6">{% if tank %}Edit {{ tank.tank_code }}{% else %}Register a tank{% endif %}</h1>
+  <form method="post" class="card card-pad" data-once>{% csrf_token %}
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      {% include 'partials/field.html' with field=form.tank_code %}
+      {% include 'partials/field.html' with field=form.name %}
+      {% include 'partials/field.html' with field=form.building %}
+      {% include 'partials/field.html' with field=form.capacity_litres %}
+    </div>
+    {% include 'partials/field.html' with field=form.location %}
+    {% include 'partials/field.html' with field=form.responsible %}
+    <fieldset class="border-t pt-4 mt-2" style="border-color:var(--line)">
+      <legend class="eyebrow mb-2">Schedule policy</legend>
+      <div class="grid sm:grid-cols-2 gap-x-4">
+        {% include 'partials/field.html' with field=form.maintenance_interval_days %}
+        {% include 'partials/field.html' with field=form.report_interval_days %}
+      </div>
+    </fieldset>
+    <button class="btn btn-primary" type="submit">{% if tank %}Save changes{% else %}Register tank and create QR{% endif %}</button>
+  </form>
+</div>
+{% endblock %}

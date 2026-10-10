@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}Record maintenance · {{ tank.tank_code }}{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <a href="{% url 'qr_app:tank_detail' company.slug tank.pk %}" class="text-sm">← {{ tank.tank_code }}</a>
+  <h1 class="text-3xl font-bold mt-2">Record maintenance</h1>
+  <p class="muted mb-4">{{ tank.name }}{% if tank.building %} · {{ tank.building }}{% endif %}</p>
+  {% if amends %}<div class="notice notice-info mb-4">This corrects event #{{ amends.pk }} ({{ amends.get_review_status_display|lower }}). The original stays in the history unchanged.</div>{% endif %}
+  <form method="post" enctype="multipart/form-data" class="card card-pad" data-once>{% csrf_token %}
+    {% if amends %}<input type="hidden" name="amends" value="{{ amends.pk }}">{% endif %}
+    {% for e in form.non_field_errors %}<div class="notice notice-error mb-4" role="alert">{{ e }}</div>{% endfor %}
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      {% include 'partials/field.html' with field=form.event_type %}
+      {% include 'partials/field.html' with field=form.work_date %}
+    </div>
+    {% include 'partials/field.html' with field=form.provider_name %}
+    {% include 'partials/field.html' with field=form.notes %}
+    <fieldset class="border-t pt-4 mt-2" style="border-color:var(--line)">
+      <legend class="eyebrow mb-1">Evidence</legend>
+      <p class="text-sm muted mb-3">A reviewer cannot accept an event without evidence. Photos support the record; they do not prove the water is safe.</p>
+      {% include 'partials/field.html' with field=form.before_photos %}
+      {% include 'partials/field.html' with field=form.after_photos %}
+      {% include 'partials/field.html' with field=form.documents %}
+    </fieldset>
+    <button class="btn btn-primary w-full sm:w-auto" type="submit">Submit for review</button>
+  </form>
+</div>
+{% endblock %}

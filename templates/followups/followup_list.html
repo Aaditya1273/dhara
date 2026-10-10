@@ -1,0 +1,47 @@
+{% extends 'base.html' %}{% load dhara %}
+{% block title %}Follow-ups{% endblock %}
+{% block content %}
+<h1 class="text-3xl font-bold mb-1">Follow-up tasks</h1>
+<p class="muted text-sm mb-4">Created by your configured schedule (maintenance overdue, report missing) or by a reviewer requesting changes. A person records every resolution.</p>
+<nav class="flex gap-2 mb-6" aria-label="Filter">
+  <a class="btn {% if show == 'open' %}btn-primary{% else %}btn-ghost{% endif %}" href="?show=open">Open</a>
+  <a class="btn {% if show == 'mine' %}btn-primary{% else %}btn-ghost{% endif %}" href="?show=mine">Assigned to me</a>
+  <a class="btn {% if show == 'resolved' %}btn-primary{% else %}btn-ghost{% endif %}" href="?show=resolved">Resolved</a>
+</nav>
+<div class="grid gap-4">
+{% for t in tasks %}
+  <article class="card card-pad">
+    <div class="flex flex-col sm:flex-row justify-between gap-3">
+      <div>
+        <p class="eyebrow">{{ t.get_kind_display }} · <a href="{% url 'qr_app:tank_detail' company.slug t.equipment_id %}">{{ t.equipment.tank_code }}</a></p>
+        <h2 class="font-semibold mt-1">{{ t.title }}</h2>
+        <p class="text-sm muted mt-1">Due {{ t.due_date|date:"d M Y" }}{% if t.is_overdue %} · <span style="color:var(--bad)">past due</span>{% endif %} · assigned to {{ t.assigned_to.email|default:"nobody" }}{% if not t.created_by_id %} · created by schedule rule{% endif %}</p>
+        {% if t.related_event_id %}<a class="text-sm" href="{% url 'qr_app:event_detail' company.slug t.related_event_id %}">Related event #{{ t.related_event_id }}</a>{% endif %}
+      </div>
+      <div>{% badge 'task' t.status %}</div>
+    </div>
+    {% if t.status == 'resolved' %}
+      <p class="text-sm mt-3 border-l-4 pl-3" style="border-color:var(--line)">{{ t.resolution_notes }}<span class="block text-xs muted">{{ t.resolved_by.email }} · {{ t.resolved_at|date:"d M Y, H:i" }}</span></p>
+    {% else %}
+      <div class="grid md:grid-cols-2 gap-4 mt-4 border-t pt-4" style="border-color:var(--line)">
+        {% if t.assign_form %}
+        <form method="post" action="{% url 'qr_app:followup_assign' company.slug t.pk %}" class="grid sm:grid-cols-2 gap-x-3 items-end" data-once>{% csrf_token %}
+          {% include 'partials/field.html' with field=t.assign_form.assigned_to %}
+          {% include 'partials/field.html' with field=t.assign_form.due_date %}
+          <button class="btn btn-ghost sm:col-span-2" type="submit">Update assignment</button>
+        </form>
+        {% endif %}
+        {% if membership.is_admin or t.assigned_to_id == user.pk %}
+        <form method="post" action="{% url 'qr_app:followup_resolve' company.slug t.pk %}" data-once>{% csrf_token %}
+          <div class="field"><label for="res-{{ t.pk }}">Resolution notes</label><textarea id="res-{{ t.pk }}" name="notes" rows="2" required placeholder="What was done, with a reference to the event or report"></textarea></div>
+          <button class="btn btn-teal" type="submit">Mark resolved</button>
+        </form>
+        {% endif %}
+      </div>
+    {% endif %}
+  </article>
+{% empty %}
+  <div class="card empty"><strong>{% if show == 'resolved' %}No resolved tasks yet{% elif show == 'mine' %}Nothing is assigned to you{% else %}No open follow-ups{% endif %}</strong>Tasks appear when a tank's configured schedule is not met or a reviewer requests changes.</div>
+{% endfor %}
+</div>
+{% endblock %}

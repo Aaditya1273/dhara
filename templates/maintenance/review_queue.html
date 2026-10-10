@@ -1,0 +1,36 @@
+{% extends 'base.html' %}{% load dhara %}
+{% block title %}Review queue{% endblock %}
+{% block content %}
+<h1 class="text-3xl font-bold mb-1">Review queue</h1>
+<p class="muted text-sm mb-6">Accept, reject or request more evidence. You cannot review your own submissions.</p>
+
+<section class="card mb-6">
+  <div class="card-pad pb-2"><h2 class="text-lg font-bold">Pending review ({{ pending|length }})</h2></div>
+  {% if pending %}
+  <div class="overflow-x-auto"><table class="table">
+    <thead><tr><th>Tank</th><th>Event</th><th>Submitted</th><th>Evidence</th><th></th></tr></thead>
+    <tbody>{% for e in pending %}
+      <tr><td class="font-semibold">{{ e.equipment.tank_code }}<div class="text-xs muted font-normal">{{ e.equipment.name }}</div></td>
+        <td>{{ e.get_event_type_display }}<div class="text-xs muted">work date {{ e.work_date|date:"d M Y" }}</div></td>
+        <td class="text-xs">{{ e.author.email }}<div class="muted">{{ e.created_at|date:"d M Y, H:i" }}</div></td>
+        <td>{% if e.evidence_count %}<span class="badge badge-good">{{ e.evidence_count }} file{{ e.evidence_count|pluralize }}</span>{% else %}{% badge 'evidence' 'missing' %}{% endif %}</td>
+        <td class="text-right"><a class="btn btn-primary" href="{% url 'qr_app:event_detail' company.slug e.pk %}">{% if e.author_id == user.pk %}View (yours){% else %}Review{% endif %}</a></td></tr>
+    {% endfor %}</tbody></table></div>
+  {% else %}<div class="empty"><strong>The queue is empty</strong>New maintenance submissions will appear here.</div>{% endif %}
+</section>
+
+<div class="grid lg:grid-cols-2 gap-6">
+  <section class="card">
+    <div class="card-pad pb-2"><h2 class="text-lg font-bold">Waiting on submitter</h2></div>
+    {% if waiting %}<table class="table"><tbody>{% for e in waiting %}
+      <tr><td><a href="{% url 'qr_app:event_detail' company.slug e.pk %}">#{{ e.pk }} · {{ e.equipment.tank_code }}</a><div class="text-xs muted">{{ e.review_notes|truncatechars:80 }}</div></td><td class="text-right">{% badge 'review' e.review_status %}</td></tr>
+    {% endfor %}</tbody></table>{% else %}<div class="empty">No events are waiting for more evidence.</div>{% endif %}
+  </section>
+  <section class="card">
+    <div class="card-pad pb-2"><h2 class="text-lg font-bold">Recently decided</h2></div>
+    {% if recent %}<table class="table"><tbody>{% for e in recent %}
+      <tr><td><a href="{% url 'qr_app:event_detail' company.slug e.pk %}">#{{ e.pk }} · {{ e.equipment.tank_code }}</a><div class="text-xs muted">{{ e.reviewed_by.email }} · {{ e.reviewed_at|date:"d M Y" }}</div></td><td class="text-right">{% badge 'review' e.review_status %}</td></tr>
+    {% endfor %}</tbody></table>{% else %}<div class="empty">No decisions yet.</div>{% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}Link report · {{ tank.tank_code }}{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <a href="{% url 'qr_app:tank_detail' company.slug tank.pk %}" class="text-sm">← {{ tank.tank_code }}</a>
+  <h1 class="text-3xl font-bold mt-2">Link a water-quality report</h1>
+  <p class="muted mb-4">{{ tank.name }}. Record what the laboratory report says. The original file is kept unchanged with its SHA-256 digest.</p>
+  <form method="post" enctype="multipart/form-data" class="card card-pad" data-once>{% csrf_token %}
+    {% for e in form.non_field_errors %}<div class="notice notice-error mb-4" role="alert">{{ e }}</div>{% endfor %}
+    {% include 'partials/field.html' with field=form.lab_name %}
+    <div class="grid sm:grid-cols-2 gap-x-4">
+      {% include 'partials/field.html' with field=form.sample_date %}
+      {% include 'partials/field.html' with field=form.report_date %}
+    </div>
+    {% include 'partials/field.html' with field=form.parameters %}
+    {% include 'partials/field.html' with field=form.results_summary %}
+    {% include 'partials/field.html' with field=form.notes %}
+    {% include 'partials/field.html' with field=form.file %}
+    <p class="text-xs muted mb-4">Uploading marks the report "not yet reviewed". Uploading or reviewing a report does not make it independently verified.</p>
+    <button class="btn btn-primary" type="submit">Link report</button>
+  </form>
+</div>
+{% endblock %}

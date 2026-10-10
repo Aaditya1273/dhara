@@ -7,3 +7,4 @@ db.sqlite3
 /staticfiles/
 .env
 debug.log
+/demo_files/
