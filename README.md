@@ -1,545 +1,228 @@
-# DHARA — Institutional Water Evidence Ledger
+<p align="center"><img src="docs/img/banner.jpg" alt="DHARA: water deserves more than a record" width="100%"></p>
 
-**Track the maintenance. Verify the evidence. Never confuse a cleaning record with water safety.**
+<p align="center">
+  <a href="https://43-204-133-35.sslip.io/"><b>Live app</b></a> ·
+  <a href="#4-live-proof-on-aws"><b>Live AWS proof</b></a> ·
+  <a href="#3-dhara-in-four-moments"><b>Product</b></a> ·
+  <a href="#5-how-it-runs-on-aws"><b>Architecture</b></a> ·
+  <a href="docs/TECHNICAL.md"><b>Technical reference</b></a> ·
+  <a href="deploy/aws/iot/README.md"><b>IoT setup</b></a>
+</p>
 
-DHARA helps hostels, schools and campuses keep water-storage maintenance records, supporting evidence, human review decisions, maintenance schedules and water-quality reports in one traceable workflow. Every tank gets a QR code that opens a read-only status page.
+<p align="center">Environmental Hacks 2026 · WeMakeDevs × AWS · Track: Heat and Water</p>
 
-> **Status:** hackathon prototype (Environmental Hacks 2026, Heat & Water track). The features below marked ✅ are implemented; application features are covered by automated tests in this repository, and the AWS rows were verified by hand on real AWS as described in [AWS integration](#aws-integration). Verified on real AWS (ap-south-1, 2026-10-11): the app is **deployed on Amazon EC2 with HTTPS**, evidence is stored in a **private Amazon S3 bucket**, and the **AWS IoT Core** pipeline runs end to end with a **simulated ESP32 on [Wokwi](https://wokwi.com)**: MQTT over TLS with an X.509 device certificate, IoT rules forwarding to DHARA and archiving to S3. The firmware has not yet run on a physical board. See [AWS integration](#aws-integration).
+<p align="center"><img src="docs/img/landing.jpg" alt="The DHARA landing page" width="100%"><br><sub>The DHARA landing page: React + TypeScript, served by Django.</sub></p>
 
-**New: thermal twin and measured cooling.** A low-cost in-tank probe (ESP32 + DS18B20) streams tank-water temperature through **AWS IoT Core** (verified with a simulated ESP32 on Wokwi; not yet on physical hardware). DHARA fits a transparent heat-balance model per tank, validates it on held-out data before showing any forecast, and measures, rather than assumes, whether a cooling intervention (reflective paint, shade, insulation) lowered the tank's daily peak.
+**DHARA** (धारा, "stream") is a water evidence ledger for hostels, schools and campuses. It measures what happens inside rooftop tanks, tells staff **which tank to test next** when heat puts chlorine at risk, and keeps verifiable proof of every response, from a technician's reading to a warden's decision. Readings travel from an in-tank probe through **AWS IoT Core** to DHARA on **Amazon EC2**, with a raw archive in **Amazon S3**.
 
-**Tank Test Priority.** Summer heat speeds up the loss of chlorine residual in stored water ([*Water Research* 2024 review](https://doi.org/10.1016/j.watres.2024.121913)), and exposed rooftop tanks heat up most. DHARA records real field readings (tank-water temperature, free chlorine) and combines how old they are with the campus weather forecast. It then tells staff **which tank to measure or review next**, with every rule that fired shown in plain words. It ranks *measurement work*; it does not predict chlorine levels or declare water safe.
+DHARA never claims water is safe to drink. It shows what was measured, what was done and what still needs doing.
+
+> **Demo video (3:04):** *link added at submission.* Every AWS screen in it was recorded live on 11 October 2026.
 
 ---
 
-## Contents
-[Problem](#the-problem) · [Solution](#the-solution) · [Users](#who-it-is-for) · [Features](#features) · [Workflow](#workflow) · [Architecture](#architecture) · [Data model](#data-model) · [Roles](#roles-and-permissions) · [AWS](#aws-integration) · [Evidence limits](#security-and-evidence-integrity) · [Setup](#local-setup) · [Configuration](#configuration) · [Tests](#migrations-and-tests) · [Deployment](#deployment) · [Demo](#demo-script) · [Impact metrics](#impact-metrics-to-measure) · [Limitations](#known-limitations) · [Roadmap](#roadmap) · [Attribution](#attribution-and-license)
+## 1. The problem
 
-## The problem
+<table><tr>
+<td width="55%" valign="top">
 
-Storage tanks need regular cleaning, and institutions need to show that it happened. In practice the record is scattered across paper registers, phone photos, invoices, chat messages and laboratory PDFs. A warden cannot quickly answer: Which tank is overdue? Who submitted the last cleaning, with what evidence? Has anyone reviewed it? Is there a current lab report, and what did it actually test? What is still open, and who owns it?
+**A register can say a tank was cleaned. It cannot say whether the water is safe today.**
 
-## The solution
+Across India, institutions store drinking water in rooftop tanks. On a summer roof those tanks bake in the sun, and the chlorine residual that keeps water protected after it leaves the plant gets harder to maintain.
 
-DHARA keeps four things **separate**, because merging them produces false confidence:
+- **About 2 lakh people die every year in India due to inadequate access to safe water.** NITI Aayog, *Composite Water Management Index*, June 2018.
+- **India's standard asks for at least 0.2 mg/L of free residual chlorine, tested at the consumer end.** BIS IS 10500:2012. WHO recommends 0.2–0.5 mg/L at the point of collection (Technical Note 11).
+- **"Maintaining protective residuals can be challenging at high temperatures."** Furst et al., *Water Research*, 2024 ([doi:10.1016/j.watres.2024.121913](https://doi.org/10.1016/j.watres.2024.121913)).
 
-| Concept | Question it answers | What it cannot establish by itself |
+</td>
+<td width="45%"><img src="docs/img/gif/problem.gif" alt="Rooftop tanks and the NITI Aayog figure, from the demo video"></td>
+</tr></table>
+
+<table><tr>
+<td width="45%"><img src="docs/img/gif/heat.gif" alt="Heat drains chlorine below the minimum: illustration from the demo video"></td>
+<td width="55%" valign="top">
+
+**And the evidence is scattered.** When someone asks what was checked, an institution typically has a register that says *cleaned*, photos on someone's phone and a lab report lost in email. Nobody can show who measured what, when, with which method, or who reviewed it.
+
+DHARA keeps four things **separate**, because merging them creates false confidence:
+
+| | Answers | Cannot establish alone |
 |---|---|---|
-| **Maintenance** | What work was recorded, for which date? | That the work was done correctly or made water potable |
-| **Evidence** | Which photos/documents support it? | That a photo is genuine or shows the right tank |
-| **Review** | Who checked it and what did they decide? | Independent verification of the physical work |
-| **Water quality** | What did a laboratory report for a sample? | That every part of the tank is safe at all times |
+| **Measurement** | How warm, how much chlorine, when, by what method | That the whole tank is safe |
+| **Maintenance** | What work was recorded, for which date | That it was done correctly |
+| **Evidence** | Which photos and documents support it | That a photo is genuine |
+| **Review** | Who decided, when and why | Independent verification |
 
-There is no blended "safety score". A missing report is shown as **"No water-quality report linked."**, a documentation gap, never a contamination claim.
+</td></tr></table>
 
-## Who it is for
+---
 
-- **Wardens / facility administrators**: register tanks, set schedule policy, review submissions, link lab reports, close follow-ups.
-- **Technicians / service providers**: record maintenance from a phone and attach evidence; respond to reviewer requests.
-- **Students, residents, visitors**: scan a tank's QR code to see a read-only summary.
+## 2. What DHARA does
 
-## Features
+| | Feature | How |
+|---|---|---|
+| 🌡️ | **Measure** | Technicians record tank-water temperature and free chlorine with method, sample point and measured-at vs entered-at time. An in-tank probe streams temperature through AWS IoT Core. |
+| 🎯 | **Prioritise** | A transparent rule engine ranks tanks for *warden review*, *repeat measurement* or *scheduled test* from reading age, configured thresholds and the Open-Meteo heat forecast, and shows every rule that fired. It ranks measurement work; it never predicts chlorine. |
+| 🧾 | **Prove** | Maintenance is submitted with photos and documents, each fingerprinted with **SHA-256** and re-checkable later. The submitter can never approve their own work; a warden accepts, rejects or asks for more, with a reason. |
+| 📌 | **Follow up** | Unmet schedules, missing lab reports and urgent readings open follow-ups with an owner and a due date. A task closes only when someone records what was done. |
+| 📱 | **Public QR page** | Every tank gets a QR code that opens a read-only status page: no login, no private details. |
+| 📈 | **Thermal twin** | A heat-balance model fitted to each tank's own readings, shown only after it passes held-out validation, and used to measure whether a cooling intervention (paint, shade, insulation) actually lowered the daily peak. |
 
-✅ Implemented and tested · 🔜 Planned
+---
 
-| | Feature |
+## 3. DHARA in four moments
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**① A technician records a reading.** Free chlorine **0.15 mg/L** from a DPD strip at the tank outlet. DHARA stores the method, who entered it and both timestamps.
+
+<img src="docs/img/app/measurement.jpg" alt="Recording a free-chlorine reading">
+
+</td>
+<td width="50%" valign="top">
+
+**② Testing priority reacts.** 0.15 is below the 0.2 mg/L minimum, so TANK-A becomes **Urgent: warden review**, with the exact rule and the heat context shown.
+
+<img src="docs/img/gif/priority.gif" alt="Testing priority flags TANK-A as urgent and shows why">
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**③ Evidence is fingerprinted.** Before and after photos are stored privately with SHA-256 digests. **Re-check digest** recomputes the hash from the stored file and confirms it matches.
+
+<img src="docs/img/gif/evidence.gif" alt="Maintenance photos with SHA-256 digests and a digest re-check">
+
+</td>
+<td valign="top">
+
+**④ A warden decides, never the submitter.** The decision, note, name and time are recorded, and the event history keeps every step.
+
+<img src="docs/img/gif/review.gif" alt="A warden accepts the maintenance event with a note">
+
+</td>
+</tr>
+</table>
+
+<table><tr>
+<td width="62%"><img src="docs/img/app/followups.jpg" alt="Follow-ups with owners and due dates"><br><sub>Follow-ups: every open task has an owner and a due date.</sub></td>
+<td width="38%" align="center"><img src="docs/img/app/public_qr.jpg" width="300" alt="Public QR status page on a phone"><br><sub>The public QR page: no login, no private details.</sub></td>
+</tr></table>
+
+---
+
+## 4. Live proof on AWS
+
+No ESP32 hardware was available before the deadline, so the probe runs on **[Wokwi](https://wokwi.com)**, a browser ESP32 simulator, with the same firmware logic. **Everything after the device is real AWS**, recorded live on 11 October 2026.
+
+<p align="center"><img src="docs/img/gif/live.gif" alt="Recorded live: the simulated board publishes; S3 arrivals and DHARA database receipts appear in real time" width="100%"></p>
+
+The simulated board (probe set to 34.2 °C) publishes every 5 seconds over MQTT/TLS with its own X.509 certificate. Pollers watched Amazon S3 and DHARA's database on EC2 at the same time: each message produced a new S3 object, and the same reading was stored by DHARA.
+
+| AWS IoT Core: thing, rules, enabled HTTPS destination | Live run: S3 arrivals and database receipts |
 |---|---|
-| ✅ | **Tank registry**: institution-scoped tank ID, label, building, internal location, capacity, responsible person, configured maintenance interval and optional report interval; search and filters |
-| ✅ | **QR codes**: unguessable 144-bit token per tank (not the DB id); PNG download |
-| ✅ | **Public QR page** (mobile): latest maintenance, evidence and review status, next due date, latest report date and status, open documentation items, prominent safety disclaimer. No names, notes, files or internal location |
-| ✅ | **Maintenance events**: event type, *claimed* work date (no future dates) vs server submission time, provider, notes, before/after photos, supporting documents |
-| ✅ | **Independent statuses**: evidence `missing/attached` (derived) and review `pending → accepted / rejected / changes_requested`, validated on the server |
-| ✅ | **Review queue**: reviewer and time recorded; reason required to reject or request changes; no self-review; cannot accept without evidence |
-| ✅ | **Corrections**: reviewed events are never edited; a correction is a new event linked via `amends` |
-| ✅ | **Water-quality reports**: separate model with lab, sample/report dates, parameters, results *as reported*, provenance, original file, institution review flag |
-| ✅ | **Due-date engine**: next due = last *accepted* work date + configured interval (Asia/Kolkata dates); statuses `none / overdue / due_soon (14 days) / ok` |
-| ✅ | **Follow-ups**: created by the configured schedule rule (maintenance needed, report missing) or by a reviewer requesting changes; assign, re-date, resolve with notes |
-| ✅ | **Audit trail**: every registration, submission, upload (with SHA-256), review, report and follow-up action with actor and server time |
-| ✅ | **Evidence digests**: SHA-256 of received bytes stored per file; "Re-check digest" recomputes from storage |
-| ✅ | **Upload validation**: extension allow-list, 8 MB limit, real content check (Pillow decode / PDF header), generated storage names |
-| ✅ | **Private file serving**: evidence and reports only through access-checked views (local) or 5-minute presigned URLs (S3) |
-| ✅ | **Per-institution roles** (warden / technician) and invitation links |
-| ✅ | **Storage switch**: local disk or private Amazon S3 bucket (django-storages + boto3), tested against mocked S3 and verified on a real bucket |
-| ✅ | **Field measurements**: tank-water temperature and free chlorine with measured-at vs entered-at time, method (thermometer/probe, DPD strip/comparator/photometer), entered-by, °F→°C and ppm→mg/L conversion, plausibility ranges (form + DB constraint), audited. Kept separate from lab reports |
-| ✅ | **Tank thermal profile**: placement (rooftop, elevated, ground, underground, indoor), sun exposure, material |
-| ✅ | **Weather context**: Open-Meteo daily max **air** temperature for the campus location in `TIME_ZONE`, cached for 1 h. It never raises: failures fall back to ranking without weather. Never shown or stored as tank-water temperature |
-| ✅ | **Tank Test Priority**: transparent rule engine (`qr_app/priority.py`) ranks tanks for *warden review*, *repeat measurement* or *scheduled test* using configured thresholds, reading age and heat context; each actionable result opens one follow-up per tank (DB-enforced), with the rule reasons in the audit log |
-| ✅ | **Sensor ingestion**: register a probe per tank (token shown once, only its SHA-256 stored); `POST /api/sensors/ingest/` validates, de-duplicates and audits readings; handles AWS IoT Core's HTTPS-destination confirmation. Every observation has exactly one source, a person or a device (DB-enforced) |
-| ✅ | **Thermal twin** (`qr_app/twin.py`): hourly heat balance `dT = a·G + b·(Tair − T) + c` fitted by least squares on the tank's own data plus Open-Meteo air temperature and solar radiation; free-running hold-out validation; forecast only if plausible and within the error limit, never beyond the validated horizon, out-of-range weather flagged |
-| ✅ | **Measured cooling interventions**: measured daily peak vs the pre-intervention model's prediction for the same weather, with a 95% Student-t interval and degree-hours above 30 °C avoided |
-| ✅ | **Strip/thermometer photo evidence** on field measurements, stored privately with SHA-256 |
-| ✅ | **AWS IoT Core pipeline** (`deploy/aws/iot/`), verified 2026-10-11 with a **simulated** ESP32 + DS18B20 on Wokwi (`firmware/wokwi/`): MQTT over TLS with an X.509 device certificate → rule `dhara_forward` → DHARA ingest API (readings stored on the tank), and rule `dhara_archive` → S3 raw archive with the token removed |
-| ✅ | **Live AWS deployment**: Amazon EC2 (Docker, Caddy HTTPS, no SSH port, access via Systems Manager) with private S3 evidence storage |
-| ⚠️ | **Physical probe**: firmware for a real ESP32 (`firmware/dhara_tank_probe/`) is written but not yet flashed or run on hardware |
-| 🔜 | Chlorine-decay projection (deliberately not shipped: would need per-site calibration data and validation above 28 °C) |
-| 🔜 | Outbreak Radar: tank→block mapping with anonymous symptom counts (future work; needs privacy design and health-authority input) |
-| 🔜 | Managed PostgreSQL (Amazon RDS) instead of SQLite on the EC2 volume |
-| 🔜 | Email/SMS reminders, Hindi UI translation, CSV/PDF audit export, S3 Object Lock retention |
+| ![IoT Core](docs/img/aws/iot.png) | ![Live run](docs/img/aws/live.png) |
 
-## Interface and design system
-
-**DHARA brand system: blue and white.** Tokens (`--dhara-*`) live in `static/css/style.css`, the single source of truth for the signed-in app, public pages and shared components (buttons, badges, cards, forms).
-
-| Layer | What it is |
+| Amazon S3: archive count, private bucket, encryption | Amazon EC2: running, HTTPS 200, SSH closed |
 |---|---|
-| Colour | Brand blue `#0866F5` (hover `#0757D9`), sky `#3B82F6`, pale `#EAF3FF`, canvas `#F7FAFF`, navy `#0F172A` text. Semantic good / warn / danger / info pairs. Chart series water `#0866F5`, air `#B8640C`, chlorine `#008C82`, checked with a palette validator (lightness, chroma, colour-blind and normal-vision separation, contrast) |
-| Type | Instrument Serif for editorial headlines, Inter for the interface (tabular numerals), IBM Plex Mono for tank IDs and SHA-256 digests. All self-hosted under SIL OFL |
-| Status | Every badge carries a distinct glyph shape (circle, triangle, diamond, ring, bar) as well as colour, so meaning never depends on colour alone |
-| Evidence lanes | Maintenance evidence (blue) and water-quality observations (teal) are drawn as separate lanes and never visually merged |
-| Charts | Server-rendered SVG with no chart library. Measured values solid, forecasts dashed with a band, air temperature dotted. Points have hover and keyboard tooltips and a data-table view. Charts appear only from two real readings |
-| Motion | Scroll-linked and entrance motion on the landing page; everything is disabled or replaced by static layouts under `prefers-reduced-motion` |
+| ![S3](docs/img/aws/s3.png) | ![EC2](docs/img/aws/ec2.png) |
 
-**Landing page** (`frontend/landing/`): React + TypeScript with [Motion](https://motion.dev), one folder per section (Hero, Problem, Layers, Priority, Lanes, Workflow, Trust, Closing). Django still serves the page and passes it real data through `json_script`: the rule engine's output for the example situations, the configured thresholds and the URLs. Highlights: a scroll-drawn five-layer chart with a crosshair readout, a testing-priority console that steps through the engine's real outcomes as you scroll, pinned evidence lanes and workflow steps, and a velocity-aware trust marquee with a pause control. Small screens and reduced motion get stacked, static versions, and a `<noscript>` fallback lists the essentials. All example values on the landing page are labelled as illustrations.
+<sub>Real CLI output; the AWS account id is masked. Reproduce with the commands in <a href="deploy/aws/iot/README.md">deploy/aws/iot/README.md</a> and the Wokwi sketches in <a href="firmware/wokwi/">firmware/wokwi/</a>.</sub>
 
-**Build:** Node is only needed to rebuild front-end assets; both outputs are committed.
-```bash
-npm install
-npm run build:css       # Tailwind utilities -> static/css/tw.css
-npm run build:landing   # type-check + Vite -> static/landing/landing.js and landing.css
+---
+
+## 5. How it runs on AWS
+
+<p align="center"><img src="docs/img/gif/architecture.gif" alt="The DHARA pipeline: probe to AWS IoT Core to Amazon S3 and DHARA on EC2" width="100%"></p>
+
 ```
-Behaviour in the signed-in app lives in `static/js/dhara.js`, progressive enhancement only: every form works without it.
+ESP32 + DS18B20 ──MQTT/TLS, X.509──▶ AWS IoT Core ──rule dhara_archive──▶ Amazon S3  (raw archive, token removed)
+                                          └──────rule dhara_forward──▶ HTTPS ▶ DHARA on Amazon EC2 ▶ validated, stored, audited
+Technician / warden browser ──HTTPS──▶ DHARA ──▶ Amazon S3 (private evidence, presigned 300 s)
+Anyone with the tank QR ──────────────▶ DHARA public page (read-only)
+```
 
-**Checked in a browser (2026-10-11):** the landing page at 1440, 1280, 1024, 390 and 360 px wide with no horizontal overflow and no console errors, plus reduced-motion and JavaScript-off renders; every signed-in page rendered for the warden and technician roles with no server errors. Lighthouse has not been re-run since the redesign.
-
-## Thermal twin
-
-**Model.** For each hour *k*: `T[k+1] − T[k] = a·G[k] + b·(Tair[k] − T[k]) + c`.
-- `G` is solar radiation in kW/m². Open-Meteo reports `shortwave_radiation` as the preceding-hour mean, so the value labelled *k+1* is used for the interval starting at *k*.
-- `Tair` is air temperature in °C.
-- `T` is the measured tank-water temperature, as an hourly mean.
-- The equation is linear in *a, b, c*, so ordinary least squares solves it in pure Python. There is no black box.
-
-**Validation (what makes it honest):**
-1. Use only hours with a consecutive measured pair and weather data. Require at least 48 training and 24 held-out steps.
-2. Fit on the first 75% of steps in time order.
-3. **Free-run** the model over the last 25%, which it never saw, starting from one measured value. Report the mean absolute error and RMSE.
-4. Reject the model if *a < 0*, if *b* is outside (0, 1), or if the held-out error is above `TWIN_MAX_HOLDOUT_MAE_C` (1.5 °C).
-5. Forecast from the latest measured hour only if it is under 3 h old, and **never further ahead than the validated span**.
-6. The band is ±1.96 × held-out RMSE, labelled approximate. Hours with weather outside the training range are flagged and left out of the peak.
-
-**Intervention effect:**
-- Fit and validate the twin on data *before* the change.
-- For each later day with 18 or more logged hours, simulate the day from its first measurement, then compare the measured daily peak with the predicted one.
-- Report the mean difference, a 95% Student-t interval and the degree-hours above 30 °C avoided.
-- This assumes nothing else changed (refill schedule, water use, sensor position). If the interval includes zero, DHARA says there is no clear effect.
-
-**Why it matters:**
-- Chlorine-decay models are validated only up to 28 °C (Fisher et al., 2012).
-- The 2026 IIT Madras E. coli model lacked water temperature and chlorine as inputs.
-- Radiative-cooling paints are tested on roofs, boxes and grain silos, but in our search we found no published test on drinking-water tanks. Performance is also known to drop in humid tropics.
-
-DHARA measures these things rather than assuming them.
-
-## Tank Test Priority
-
-**Rules** (in order; the first chlorine rule that matches wins). Thresholds come from environment variables and are shown on the page.
-
-| # | Condition | Result |
+| Service | What DHARA uses it for | Where |
 |---|---|---|
-| 1 | No free-chlorine reading on record | **Scheduled test**: *medium*, or *high* with heat context |
-| 2 | Latest reading older than `CHLORINE_MAX_AGE_HOURS` (72 h) | **Scheduled test**: *medium*, or *high* with heat. A stale low reading triggers a re-test, never an alarm |
-| 3 | Fresh reading **below** `CHLORINE_MIN_MG_L` (0.2) | **Warden review**: *urgent*, confirm with a repeat measurement |
-| 4 | Fresh reading above `CHLORINE_MAX_MG_L` (1.0) | **Warden review**: *medium* |
-| 5 | Fresh reading within `CHLORINE_NEAR_MARGIN_MG_L` (0.1) of the minimum | **Repeat measurement**: *medium*, or *high* with heat |
-| 6 | Heat context and the reading is older than `WARM_RETEST_HOURS` (24 h) | **Repeat measurement**: *medium* |
-| 7 | Sun-exposed tank, hot forecast, no recent water-temperature reading | **Scheduled test** (temperature): *low* |
-| – | Placement or sun exposure unknown | Informational only, no follow-up |
+| **AWS IoT Core** | One thing per probe with its own X.509 certificate; the policy lets it connect only as itself and publish only to `dhara/<thing>/telemetry`. Two topic rules route every message. | `deploy/aws/iot/` |
+| **IoT rule → HTTPS destination** | `dhara_forward` posts each message to `/api/sensors/ingest/`, where DHARA checks the device token (only its SHA-256 is stored), validates time and range, de-duplicates and audits. The destination was confirmed through DHARA's own confirmation handler. | `qr_app/views.py` `sensor_ingest` |
+| **Amazon S3** | `dhara_archive` writes one object per message under `dhara/iot-raw/`, with the device token excluded. The same private bucket stores evidence and lab reports: Block Public Access on, SSE-S3, versioning, downloads only through 300-second presigned URLs after DHARA's access check. | `deploy/aws/iot/archive-rule.json`, `project_qr/settings.py` |
+| **Amazon EC2** | DHARA (Django 5.2, gunicorn, Docker) on a `t3.micro` in ap-south-1 behind Caddy with Let's Encrypt HTTPS. No SSH port; admin through Systems Manager; IMDSv2 required; S3 access only through the instance role. | `deploy/aws/ec2/` |
+| **AWS Systems Manager** | Deploys and admin commands without SSH (`redeploy.sh` ships the commit via S3 + Run Command). | `deploy/aws/ec2/redeploy.sh` |
+| **IAM** | An instance role scoped to the app's S3 prefixes, and an IoT role allowed only `s3:PutObject` on `dhara/iot-raw/*`. | `deploy/aws/` |
 
-**Heat context** means the forecast max air temperature is ≥ `FORECAST_HOT_C` (35 °C), or a fresh tank-water reading is ≥ `WATER_WARM_C` (25 °C). Heat only raises urgency; it never creates a "below threshold" finding by itself.
+**Why it stays cheap.** One `t3.micro` (about $0.018/hour with its Elastic IP) and pay-per-message IoT Core. A probe sending every 5 minutes is about 8,600 messages a month.
 
-**Boundaries:**
-- *below* is strict (`<`): exactly 0.2 mg/L is not below the minimum;
-- *fresh* is inclusive (`≤ 72 h`);
-- *warm* and *hot* are inclusive (`≥`).
+---
 
-All of these are unit-tested.
+## 6. Inside DHARA
 
-**Default thresholds.** Chlorine defaults follow IS 10500:2012: free residual chlorine minimum 0.2 mg/L at the consumer end (0.5 mg/L where viral protection is needed), permissible 1.0 mg/L. The temperature defaults are policy choices. Every value can be changed.
+<table><tr>
+<td width="50%"><img src="docs/img/app/dashboard.jpg" alt="The warden overview"><br><sub>Overview: what needs measuring, reviewing or resolving today.</sub></td>
+<td width="50%"><img src="docs/img/app/priority.jpg" alt="Testing priority with reasons"><br><sub>Testing priority: every rule and threshold shown.</sub></td>
+</tr><tr>
+<td><img src="docs/img/app/verified.jpg" alt="SHA-256 digest re-check"><br><sub>"SHA-256 matches the digest recorded at upload."</sub></td>
+<td><img src="docs/img/app/accepted.jpg" alt="Accepted maintenance event"><br><sub>Accepted, with the reviewer's name, note and time.</sub></td>
+</tr></table>
 
-**What it does not do:**
-- It does not project chlorine decay.
-- It does not claim that a chlorine reading proves potability.
-- It does not attribute illness.
-- It does not tell anyone to chlorinate or isolate a tank. A warden decides and records the action through the follow-up workflow.
+**Stack:** Django 5.2 · Python 3.12+ · SQLite / PostgreSQL · django-storages + boto3 · WhiteNoise · Tailwind (compiled) · React + TypeScript + Motion for the landing page (Vite build, output committed) · Docker · Caddy.
 
-## Workflow
+**Roles:** per-institution memberships (warden / technician). A warden in one institution has no rights in another.
 
-```mermaid
-flowchart TD
-    A[Warden registers tank<br/>interval policy + responsible person] --> B[QR code generated]
-    B --> C{Schedule rule}
-    C -- no accepted maintenance / overdue --> F1[Follow-up opened<br/>assigned to responsible person]
-    C -- report expected but none current --> F2[Follow-up opened]
-    F1 --> D[Technician records maintenance<br/>claimed date + photos/documents]
-    D --> E[Review queue: pending]
-    E --> G{Warden decision<br/>not the submitter}
-    G -- accept, evidence required --> H[Accepted: next due date recalculated]
-    G -- request changes, reason required --> I[Changes requested<br/>follow-up to submitter]
-    I --> J[Submitter adds evidence] --> E
-    G -- reject, reason required --> K[Rejected, kept in history]
-    K --> L[Correction = new event amending the old one] --> E
-    F2 --> M[Warden links lab report<br/>separate record, unreviewed until marked]
-    H --> N[Person resolves follow-up with notes]
-    M --> N
-    B -.scan.-> P[Public read-only status page]
-```
+---
 
-Review states (maintenance) and report states (water quality) are independent:
-
-```mermaid
-stateDiagram-v2
-    [*] --> pending: submitted
-    pending --> accepted: warden accepts (evidence attached)
-    pending --> rejected: warden rejects (reason)
-    pending --> changes_requested: warden requests evidence (reason)
-    changes_requested --> pending: submitter responds
-    accepted --> [*]
-    rejected --> [*]
-```
-`WaterQualityReport`: `unreviewed → reviewed`. A report never changes maintenance status, and vice versa.
-
-## Architecture
-
-```mermaid
-flowchart LR
-    Probe[ESP32 + DS18B20 in tank] -->|MQTT/TLS X.509| IoT[AWS IoT Core]
-    IoT -->|rule: raw archive, no token| S3
-    IoT -->|rule: HTTPS| App
-    App -->|hourly air temp + solar| OM[Open-Meteo]
-    Phone[Technician / Warden browser] -->|HTTPS| App
-    Visitor[QR scan] -->|/qr/token/| App
-    subgraph App[Django 5.2 app · gunicorn · Docker on Amazon EC2 · Caddy HTTPS]
-      Views[Views + per-institution access mixins] --> Services[services.py<br/>state rules, validation, digests, audit]
-      Services --> ORM[Django ORM]
-      Services --> Storage[Django storage API]
-    end
-    ORM --> DB[(SQLite on a persistent volume / any PostgreSQL)]
-    Storage -->|STORAGE_BACKEND=local| Disk[(MEDIA_ROOT, never publicly routed)]
-    Storage -->|STORAGE_BACKEND=s3| S3[(Amazon S3 private bucket<br/>presigned GET, 300 s)]
-```
-
-Server-rendered Django templates with compiled Tailwind utilities and a small vanilla-JS file for the signed-in app; the public landing page is a React + TypeScript bundle. No ML model: the workflow is the product.
-
-## Data model
-
-```mermaid
-erDiagram
-    Company ||--o{ Membership : has
-    User ||--o{ Membership : "role per institution"
-    Company ||--o{ Equipment : "owns (tank)"
-    Equipment ||--o{ ServiceRecord : "maintenance events"
-    ServiceRecord ||--o{ ServiceRecordPhoto : "evidence (sha256)"
-    ServiceRecord |o--o{ ServiceRecord : amends
-    Equipment ||--o{ WaterQualityReport : "lab reports (sha256)"
-    Equipment ||--o{ FollowUpTask : "follow-ups"
-    ServiceRecord |o--o{ FollowUpTask : "related event"
-    Company ||--o{ AuditEvent : "activity log"
-    Company ||--o{ Invitation : invites
-```
-
-Model names keep the upstream QRInvent names (`Equipment` = tank, `ServiceRecord` = maintenance event, `ServiceRecordPhoto` = evidence) to keep the adaptation traceable. DB constraints: unique tank ID per institution; a decided review must have a reviewer and time; a resolved task must have a resolver; report date ≥ sample date; one open rule-generated task per tank and kind. Evidence, events and reports use `PROTECT`, so history cannot be deleted by cascading.
-
-## Roles and permissions
-
-All checks are on the server (`qr_app/mixins.py`, `qr_app/services.py`). Every query is filtered by the institution in the URL *and* the user's membership in it; another institution's IDs return 404/403.
-
-| Action | Warden / Administrator | Technician | Public (QR) |
-|---|:-:|:-:|:-:|
-| View tanks, events, evidence, reports, follow-ups | ✅ | ✅ | summary only |
-| Register / edit tanks, set policy | ✅ | ❌ | ❌ |
-| Submit maintenance + evidence | ✅ | ✅ | ❌ |
-| Review maintenance | ✅ (not own) | ❌ | ❌ |
-| Respond to "changes requested" | ✅ | own events | ❌ |
-| Link / mark-review lab reports | ✅ | ❌ | ❌ |
-| Assign follow-ups | ✅ | ❌ | ❌ |
-| Resolve follow-ups | ✅ | if assigned | ❌ |
-| Invite / remove members, activity log | ✅ | ❌ | ❌ |
-
-Roles live on `Membership`, so being a warden in one institution grants nothing in another. Inviting an existing account requires that person to be signed in as that account.
-
-## AWS integration
-
-**AWS IoT Core: tank probes** ✅ **verified end to end on real AWS, 2026-10-11, with a simulated device.**
-- Each probe is an IoT *thing* with its own X.509 certificate. Its policy allows it to connect only as itself and to publish only to `dhara/<thing>/telemetry`.
-- Rule 1 archives raw readings to S3 under `dhara/iot-raw/`, with the device token excluded.
-- Rule 2 forwards the readings over HTTPS to `/api/sensors/ingest/`, where DHARA checks the device token and validates every reading.
-- Setup steps, policies and a verification checklist are in [`deploy/aws/iot/README.md`](deploy/aws/iot/README.md).
-
-**What was checked:** a Wokwi-simulated ESP32 + DS18B20 running [`firmware/wokwi/sketch_aws.ino`](firmware/wokwi/sketch_aws.ino) (thing `dhara-wokwi-01`) connected to AWS IoT Core with its certificate and published every 20 s. The forward rule delivered every message to the live DHARA ingest API, where the readings appear on the demo tank with source `dhara-wokwi-01`; the archive rule wrote one S3 object per message, without the token. A second sketch, [`firmware/wokwi/sketch.ino`](firmware/wokwi/sketch.ino), tests the direct HTTPS path without AWS IoT. The simulated probe reports a set temperature: these are pipeline tests, not tank measurements. The HTTP rule destination had to be confirmed through DHARA's built-in confirmation handler and then enabled, since a confirmed destination starts disabled.
-
-**Amazon S3: evidence and report storage** ✅ **verified on real AWS, 2026-10-11.**
-
-**Bucket:** private, in `ap-south-1`.
-- All four Block Public Access settings on.
-- Object ownership `BucketOwnerEnforced`, so ACLs are disabled.
-- Default SSE-S3 (AES256) encryption with Bucket Key.
-- Versioning enabled.
-
-**What was checked:**
-- The **live test** `LiveS3Tests` uploads, reads back, verifies SHA-256, checks the presigned URL and deletes. It **passes**.
-- **End-to-end through the app** with `STORAGE_BACKEND=s3`, on a throwaway database and the labelled demo photo:
-  - a maintenance-evidence upload is stored as an encrypted object whose size matches the database;
-  - the digest re-check against S3 passes;
-  - the in-app download redirects to a **presigned URL that returns 200**;
-  - the **plain object URL returns 403**;
-  - an anonymous user is redirected to login.
-- Test objects were removed afterwards.
-
-**Bug found only by the live test, and fixed.** Presigned URLs were signed for the global S3 endpoint. Buckets outside `us-east-1` answer with a 307 redirect to the regional host, so the signature failed (403). DHARA now signs for `https://s3.<region>.amazonaws.com` with virtual-hosted addressing.
-
-**Implementation:**
-
-- `STORAGE_BACKEND=s3` switches Django's default storage to `storages.backends.s3.S3Storage`.
-- Objects get generated keys (`dhara/evidence/<institution>/<uuid>.<ext>`), no ACL (bucket stays private), no overwrite.
-- Downloads go through DHARA's access check, then a 300-second presigned URL.
-- If an S3 write fails, the database transaction rolls back and the user sees "could not be stored, nothing was saved".
-- The SHA-256 digest stored in the DB can be re-checked against the S3 object from the event page.
-
-**Verification status:**
-- `MockedS3Tests` runs the real django-storages/boto3 path against [moto](https://github.com/getmoto/moto). It checks the object exists, has no public grant, its digest verifies, and downloads redirect to a signed URL. **Passing.**
-- `LiveS3Tests` uploads, reads back, verifies and deletes against a real bucket. **Passed** against the real bucket on 2026-10-11; it is skipped automatically when no credentials are set. To run:
-  ```bash
-  export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=ap-south-1
-  DHARA_S3_TEST_BUCKET=your-private-test-bucket python manage.py test qr_app.tests.LiveS3Tests
-  ```
-- **Recommended bucket setup:** Block Public Access on, SSE-S3 encryption, versioning on. Give the app an IAM role with `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` on `arn:aws:s3:::BUCKET/dhara/*` and `s3:ListBucket` on the bucket.
-- **Database:** the live demo uses SQLite on a persistent Docker volume (single instance). Any PostgreSQL works through `DATABASE_URL`, e.g. Amazon RDS. No LLM or AI service is used or needed.
-
-## Security and evidence integrity
-
-| Mechanism | Useful for | Not proof of |
-|---|---|---|
-| Server submission time | When DHARA received the record | When the work physically happened (that is the *claimed* date) |
-| SHA-256 digest | Detecting later changes to the stored file | That the photo is genuine, unedited at capture, or shows this tank |
-| Human review | Who decided what, when, and why | Independent verification of the work |
-| Lab report | What a lab reported for one sample and parameter set | Continuous safety of all water |
-| Audit table | A readable trail of actions | Tamper-proofing: it is an ordinary DB table that a DB administrator could alter |
-
-**Controls in place:**
-- CSRF on all forms
-- per-institution query scoping
-- server-side transitions with row locks
-- upload type, size and content validation
-- no public media route
-- templates auto-escaped (no `|safe`)
-- axes login lockout
-- OTP-protected admin site
-- `SECRET_KEY` required outside DEBUG
-- secure cookies, HSTS (configurable) and SSL redirect in production
-- `manage.py check --deploy` is clean apart from the opt-in HSTS subdomain and preload warnings
-
-**Not yet done:**
-- rate limiting beyond login
-- antivirus scanning of uploads
-- S3 Object Lock
-- external log anchoring
-- a formal security review
-
-Do not call this production-secure until those are assessed.
-
-## Local setup
-
-Requires Python 3.12–3.14.
+## 7. Run it
 
 ```bash
 git clone https://github.com/Aaditya1273/dhara.git && cd dhara
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
-cp .env.example .env            # then set SECRET_KEY; DEBUG=True for local
+cp .env.example .env              # set SECRET_KEY; DEBUG=True for local
 python manage.py migrate
-python manage.py seed_demo      # prints demo logins; writes demo_files/
-python manage.py runserver
-```
-Open http://127.0.0.1:8000, or register your own institution at `/register/`.
-
-## Configuration
-
-See `.env.example`. Variables read by the app:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `SECRET_KEY` | required unless `DEBUG=True` | Django signing key |
-| `DEBUG` | `False` | Never `True` in production |
-| `ALLOWED_HOSTS` | `127.0.0.1,localhost` | Comma-separated hostnames |
-| `CSRF_TRUSTED_ORIGINS` | empty | e.g. `https://dhara.example.org` |
-| `DATABASE_URL` | SQLite file | `postgres://…` for production |
-| `TIME_ZONE` | `Asia/Kolkata` | Due-date calendar |
-| `STORAGE_BACKEND` | `local` | `local` or `s3` |
-| `AWS_STORAGE_BUCKET_NAME`, `AWS_REGION`, `AWS_S3_PREFIX` | –, `ap-south-1`, `dhara` | S3 settings |
-| `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS` | `True`, `0` | Production HTTPS policy |
-| `PRIORITY_*` | see `.env.example` | Tank Test Priority thresholds |
-| `OPEN_METEO_URL`, `OPEN_METEO_TIMEOUT` | Open-Meteo API, `5` s | Weather forecast source |
-| `BILLING_ENABLED` | `False` | Re-enables upstream QRInvent YooKassa billing. Leave off for DHARA |
-| `LOG_LEVEL` | `INFO` | Console logging |
-
-## Migrations and tests
-
-```bash
-python manage.py makemigrations --check   # no pending model changes
-python manage.py migrate
-python manage.py test qr_app              # 87 tests; LiveS3Tests skipped without a bucket
-```
-The suite covers:
-- tank creation and validation, QR token resolution
-- public page field exposure and no contamination claims
-- submission, upload rejection, oversize files, storage-failure rollback
-- review accept/reject/changes, unauthorized and self review, transitions
-- cross-institution access, per-institution roles, invitation ownership
-- report independence, due-date policy, rule follow-ups, assign/resolve
-- digest tamper detection, mocked S3 privacy, legacy pages and billing gate
-
-## Deployment
-
-**Live demo deployment (verified 2026-10-11).** EC2 `t3.micro` in `ap-south-1`, running Amazon Linux 2023 with Docker.
-
-**How it is set up:**
-- Caddy issues a Let's Encrypt certificate for `<elastic-ip>.sslip.io`.
-- Port 80 redirects to 443 (308), and **no SSH port is open**. Admin access goes through AWS Systems Manager.
-- The app gets AWS credentials only from the instance role `dhara-ec2`. Its S3 access is limited to `dhara-prod/*` and `deploy/*`.
-- IMDSv2 is required, with a hop limit of 2 so the container can reach the role.
-- The SQLite database sits on a persistent Docker volume, which is acceptable for this single-instance demo.
-
-**Verified on the live server:**
-- the certificate chain;
-- the HTTP to HTTPS redirect;
-- the security headers;
-- port 22 closed;
-- static files served;
-- the in-container S3 write/read/delete using the role;
-- a real login and the core pages.
-
-**Commands:**
-```bash
-BUCKET=<bucket> ./deploy/aws/ec2/provision.sh   # create (≈ $0.018/hour in ap-south-1 incl. Elastic IP; billed hourly)
-BUCKET=<bucket> ./deploy/aws/ec2/redeploy.sh    # ship the current commit via S3 + Systems Manager
-./deploy/aws/ec2/teardown.sh                    # stop all server charges (EMPTY_BUCKET=1 BUCKET=… also empties S3)
+python manage.py seed_demo        # demo institution, tanks and logins (printed)
+python manage.py runserver        # http://127.0.0.1:8000
+python manage.py test qr_app      # 88 tests
 ```
 
-**Other hosting:**
-The simplest credible AWS path is a container on **AWS App Runner** or **ECS Fargate**, with **RDS PostgreSQL** and a private **S3** bucket:
+Front-end assets are prebuilt. To rebuild: `npm install && npm run build:css && npm run build:landing`.
 
-```bash
-docker build -t dhara .
-docker run -p 8000:8000 --env-file .env.production dhara   # runs migrate, then gunicorn
-```
+Deploy to EC2: `BUCKET=<bucket> ./deploy/aws/ec2/provision.sh`, then `./deploy/aws/ec2/redeploy.sh` for each new commit. AWS IoT Core setup, step by step: [`deploy/aws/iot/README.md`](deploy/aws/iot/README.md). Run the probe without hardware: paste [`firmware/wokwi/sketch_aws.ino`](firmware/wokwi/sketch_aws.ino) and `diagram.json` into a new Wokwi ESP32 project.
 
-1. Create a private S3 bucket (see the policy above) and an RDS PostgreSQL database.
-2. Push the image to Amazon ECR and create an App Runner service from it. Give its instance role the S3 permissions above.
-3. Set the environment: `SECRET_KEY`, `DEBUG=False`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `DATABASE_URL`, `STORAGE_BACKEND=s3`, `AWS_STORAGE_BUCKET_NAME`, `AWS_REGION`.
-4. Point the health check at `/healthz/`. It is exempt from the SSL redirect.
-5. Create the first warden through `/register/`, or run `python manage.py seed_demo` once for a demo.
+---
 
-Static files are served by WhiteNoise. Don't use SQLite or local media storage on ephemeral or multi-instance hosts.
+## 8. Results
 
-**Troubleshooting**
-
-| Symptom | Fix |
+| Check | Result |
 |---|---|
-| `ImproperlyConfigured: SECRET_KEY must be set` | Set `SECRET_KEY` or `DEBUG=True` locally |
-| `DisallowedHost` | Add the host to `ALLOWED_HOSTS` |
-| CSRF failure behind HTTPS proxy | Set `CSRF_TRUSTED_ORIGINS` |
-| Redirect loop behind a load balancer | It must send `X-Forwarded-Proto`, or set `SECURE_SSL_REDIRECT=False` and terminate TLS upstream |
-| `AWS_STORAGE_BUCKET_NAME is required` | Set it, or use `STORAGE_BACKEND=local` |
-| Uploads fail with "could not be stored" | Check S3 permissions and the region; the app log has the boto3 error |
+| Automated tests | **88 pass** (1 live-S3 test skips without credentials): workflow, permissions, evidence, priority rules, thermal twin, ingest, S3 via moto |
+| AWS IoT Core, end to end | Simulated ESP32 → MQTT/TLS with X.509 → `dhara_forward` → DHARA on EC2 stored every reading; `dhara_archive` → **115 objects** in S3 |
+| Live run (11 Oct 2026) | New S3 object every ~5 s; DHARA's database received the same readings (34.19 °C, source `dhara-wokwi-01`) |
+| Amazon S3 evidence storage | Live test uploads, reads back, verifies SHA-256, checks the presigned URL and deletes: **passes**. Plain object URL returns 403. |
+| Amazon EC2 deployment | HTTPS 200, HTTP → HTTPS redirect, security headers, port 22 closed, IMDSv2 required |
+| Bug found only on real AWS | Presigned URLs signed for the global S3 endpoint failed outside us-east-1; fixed by signing for the regional endpoint |
 
-## Demo script
+---
 
-`python manage.py seed_demo` creates **"DEMO Hostel (demonstration data)"** with:
-- `warden@demo.dhara.test` and `technician@demo.dhara.test` (password printed, or set with `--password`)
-- Tank A (180-day maintenance and report policy) and Tank B
-- `demo_files/`: labelled demo photos and a PDF that says "SAMPLE REPORT – NOT A REAL LABORATORY RESULT"
+## 9. Limits (read before quoting anything)
 
-1. **Warden:** Tanks → Register tank, or use Tank A. Show the QR code on the tank page.
-2. **Overview:** "Need maintenance" counts Tank A, and follow-ups were opened by the schedule rule.
-3. **Technician (phone width):** Tank A → Record maintenance → attach `DEMO-before.png` and `DEMO-after.png` → Submit. The event shows *Pending review*.
-4. **Warden:** Review queue → open the event → Accept with a note, or request more evidence to show the round trip.
-5. **Scan the QR, or open the public page:** last accepted maintenance, next due date, *Evidence attached · Accepted*, and "No water-quality report linked."
-6. **Warden:** Link water-quality report → upload the SAMPLE PDF. The public page now shows the lab and sample date as *Uploaded, not yet reviewed*. Maintenance status is unchanged.
-7. **Follow-ups:** assign one, then resolve it with notes ("Cleaned, event #1 accepted").
-8. **Activity:** the full trail with SHA-256 digests. On the event page, "Re-check digest" verifies the stored file.
-9. **Thermal twin (real probe data only):** register a sensor on the tank, flash the ESP32 and let it log for **at least 3 days**: 72 consecutive hourly steps are needed before validation can pass. Before then, the tank page shows how much more data is needed. Once it passes, it shows the held-out error, the forecast chart and the forecast peak. Test Priority then uses the forecast water temperature.
-   **Cooling result:** log the intervention (for example white paint) after 3+ days of baseline, then keep logging 3+ more days. The tank page reports the measured effect with its confidence interval, whatever it turns out to be.
-10. **Test priority (real readings only):** open *Test priority*. With no readings, both tanks show "No free-chlorine reading on record" and get one follow-up each. Take a **real** DPD strip and thermometer reading at an actual tank (yours or a hostel's) and enter it under *Record measurement*. The ranking updates and shows the rule that fired. The weather panel shows the live Open-Meteo forecast for the campus location (`seed_demo --lat/--lon`). If the real forecast is below 35 °C, heat context honestly stays off. To show the heat rule, change `PRIORITY_FORECAST_HOT_C` and say on camera that it is a policy setting.
-11. **AWS:** follow `deploy/aws/iot/README.md`. Without hardware, paste `firmware/wokwi/sketch_aws.ino` and `diagram.json` into a new Wokwi ESP32 project (libraries: OneWire, DallasTemperature, PubSubClient), fill in the endpoint, certificate, key and sensor token locally, and start it. Show the serial monitor publishing, the AWS IoT MQTT test client (`dhara/#`) receiving messages, a reading appearing on the tank page, and the S3 raw archive. Say on camera that the device is simulated. For storage, upload evidence with `STORAGE_BACKEND=s3` and show the private object and the presigned URL.
+- **The probe is simulated.** The AWS path is verified with a Wokwi ESP32; the firmware has not run on a physical board, and the simulated probe reports a set value, not a tank measurement.
+- **DHARA records what people submit.** It cannot confirm that work physically happened, that a photo is genuine or that a lab report is valid. SHA-256 detects later changes, not fakes.
+- **The audit log is an ordinary database table,** not a tamper-proof ledger. S3 Object Lock and external anchoring are not yet in place.
+- **Testing priority ranks measurement work.** It does not predict chlorine and never declares water safe. DPD strips have limited precision.
+- **The thermal twin needs real data:** at least 3 days of hourly readings before validation can pass.
+- The live demo uses SQLite on a persistent volume (single instance), not Amazon RDS.
 
-## Impact metrics to measure
+## What's next
+Flash the firmware on a physical ESP32 and log a real tank through a summer; move to Amazon RDS; S3 Object Lock for evidence; scheduled reminders; Hindi interface; a pilot with one consenting institution, measuring review turnaround and follow-up closure against its paper process.
 
-Measure these in a pilot; DHARA makes no outcome claims yet.
+## Credits and licences
+Built on [QRInvent](LICENSE) (MIT, © 2026 RSLV; the first commit is the unmodified upstream import). Weather: Open-Meteo. Device simulation: Wokwi. Fonts: Inter, Instrument Serif, IBM Plex Mono (SIL OFL). Video photos via Wikimedia Commons: BohunkaNika (CC BY-SA 4.0), Shixart1985 (CC BY 2.0), MohammedSuman22 (CC BY-SA 4.0), SuSanA Secretariat (CC BY 2.0), Massachusetts DEP (CC BY 2.0), Timothy A. Gonsalves (CC BY-SA 4.0). Video music: "Moon Walk" by Eugenio Mininni (Mixkit licence). Voice: Kokoro TTS. Full technical detail, data model, security notes and configuration: [`docs/TECHNICAL.md`](docs/TECHNICAL.md).
 
-| Metric | Definition |
-|---|---|
-| Maintenance coverage | Share of tanks with a configured interval and a responsible person |
-| Schedule adherence | Share of tanks not in `none`/`overdue` status |
-| Evidence completeness | Share of submitted events with evidence before review |
-| Review turnaround | Submission time to review decision |
-| Follow-up closure | Share of follow-ups resolved, and median time to resolve |
-| Record retrieval time | Time for a warden to produce a tank's history, compared with the paper baseline |
-| Report linkage | Share of tanks with a report policy that have a current report |
+## AI tools used
+Claude Code (Anthropic) wrote most of the code, tests, documentation and the demo video under the author's direction and review.
 
-Water-quality outcomes need proper testing and a separate evaluation.
-
-## Known limitations
-
-- DHARA records what users submit. It cannot confirm that work physically happened as described.
-- Photos cannot establish microbiological or chemical safety. A linked PDF does not prove the laboratory, the chain of custody or the validity of the results.
-- A QR code is only as trustworthy as the registration and physical labelling behind it.
-- The audit log, timestamps and digests aid traceability. They are not proof against administrator-level tampering.
-- Schedule intervals are whatever the institution configures. DHARA encodes no legal standard.
-- Rule-based follow-ups are generated when the overview or follow-up page loads. There is no background scheduler or notifications yet.
-- The twin is a single-node lumped model. It ignores stratification, refills and draw-off except as an average term (*c*), and is only as good as its held-out validation on that tank.
-- An intervention effect is an observational before/after comparison against a model, not a randomised trial. A second untreated tank logged in parallel makes it far more convincing.
-- The AWS IoT path is verified only with a simulated ESP32 on Wokwi. The firmware has not been flashed onto a physical board, and the simulated probe reports a set value, not a tank measurement.
-- Test Priority uses the readings people enter. It cannot detect a falsified reading, and DPD strips have limited precision.
-- The thermal profile is descriptive context. DHARA does not estimate tank-water temperature from air temperature.
-- Weather comes from a third-party forecast (Open-Meteo) and is shown only as air-temperature context.
-- No email delivery: invitations are links the warden shares by hand.
-- The landing page is rendered by JavaScript; with JavaScript off a short HTML fallback is shown instead.
-- The upstream billing templates (YooKassa) are still in Russian and only reachable with `BILLING_ENABLED=True`.
-
-## Roadmap
-
-1. Flash the probe firmware on a physical ESP32 and log a real tank; move from SQLite to Amazon RDS; run the live S3 test in CI.
-2. Field pilot for Test Priority: collect paired temperature and chlorine readings across summer to learn whether a per-site chlorine-decay estimate is justified, before shipping any projection.
-3. **Outbreak Radar** (future): map tanks to hostel blocks and watch anonymous daily GI case counts. This needs a privacy review, an institutional ethics process and health-authority involvement before any build.
-4. Pilot with one consenting institution. Measure the metrics above against its current process.
-5. Scheduled reminders, CSV/PDF export of a tank's history, Hindi interface.
-6. Stronger integrity: S3 versioning plus Object Lock for evidence, and periodic export of audit digests.
-
-## Attribution and license
-
-DHARA is built on **[QRInvent](LICENSE)**, a Django QR equipment-maintenance starter © 2026 RSLV, used under the **MIT License** (kept in `LICENSE`). The first commit in this repository is the unmodified upstream import.
-
-**Adapted from QRInvent:**
-- Django project layout and multi-institution URL scheme (`/<institution>/…`)
-- user, company and membership models, invitations and registration
-- QR generation with `qrcode`
-- the service-record and photo concept (now maintenance events and evidence)
-- axes and OTP security setup
-- the YooKassa subscription code (kept but disabled by default)
-
-**Original to DHARA:**
-- tank schema and due-date engine
-- independent review workflow with transition rules, no self-review and amendments
-- evidence kinds and SHA-256 digests, with upload content validation
-- water-quality report model
-- follow-up tasks (schedule rule and reviewer-created)
-- audit log
-- per-institution roles, which fix upstream's global role escalation
-- public QR status page
-- private file serving and the S3 storage backend
-- the whole interface and design system
-- the test suite, the demo seed command and the Docker/deployment setup
-
-**Removed from upstream:**
-- the generic equipment-template and custom-field builder, which the tank schema replaces (it also had a cascade that deleted all equipment when a template was deleted)
-
-**AI tools:** implementation was developed with Claude Code (Anthropic) as a coding assistant, under the author's direction and review.
-
-## References
-
-- National Health Mission, *Kayakalp Implementation Guidebook*: tank-cleaning record guidance for healthcare facilities. It does not apply to every hostel or school by default. [PDF](https://nhm.gov.in/images/pdf/in-focus/Implementation_Guidebook_for_Kayakalp.pdf)
-- BIS, *IS 10500:2012 Drinking Water Specification*: free residual chlorine. [PDF](https://consumerhelpline.gov.in/public/assets/docs/bis/IS10500-2012.pdf)
-- Furst, Graham, Weisman & Adusei, "It's getting hot in here: effects of heat on temperature, disinfection and opportunistic pathogens in drinking water distribution systems", *Water Research* 2024. [DOI](https://doi.org/10.1016/j.watres.2024.121913)
-- Fisher et al., temperature-dependent chlorine bulk decay model (validated 3.5–28 °C), *Water Research* 2012. [DOI](https://doi.org/10.1016/j.watres.2012.03.017)
-- Kagan et al., *People's Water Data* (IIT Madras), arXiv 2604.04240 (2026): notes free chlorine and water temperature were not available as predictors. [arXiv](https://arxiv.org/abs/2604.04240)
-- Amazon S3 docs: [object integrity](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html) · [Versioning](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html) · [Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html)
+## Author
+[@Aaditya1273](https://github.com/Aaditya1273)
