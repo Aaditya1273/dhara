@@ -372,9 +372,12 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
 /* ==========================================================================
    Landing
    ========================================================================== */
-.lp-header { position: fixed; inset: 0 0 auto 0; z-index: var(--z-nav); background: rgb(255 255 255 / 72%);
-  -webkit-backdrop-filter: saturate(160%) blur(16px); backdrop-filter: saturate(160%) blur(16px); border-bottom: 1px solid rgb(226 232 240 / 70%); }
-.lp-header .site-bar { min-height: var(--nav-height); }
+/* Floating pill nav: the header itself is a transparent, click-through strip; only the bar catches pointer events. */
+.lp-header { position: fixed; inset: 0 0 auto 0; z-index: var(--z-nav); padding: 12px var(--page-gutter) 0; pointer-events: none; }
+.lp-header .site-bar { pointer-events: auto; max-width: 72rem; min-height: 60px; padding: 0 8px 0 20px; border-radius: var(--radius-pill);
+  background: rgb(255 255 255 / 78%); -webkit-backdrop-filter: saturate(160%) blur(16px); backdrop-filter: saturate(160%) blur(16px);
+  border: 1px solid rgb(226 232 240 / 80%); box-shadow: var(--shadow-floating); }
+@media (max-width: 479px) { .lp-header { padding-top: 8px; } .lp-header .site-bar { padding-left: 14px; min-height: 54px; } }
 .lp-links { display: none; }
 @media (min-width: 1000px) { .lp-links { display: flex; gap: var(--s2); } }
 .site-nav .btn-sm { min-height: 38px; padding: 0 1rem; }
