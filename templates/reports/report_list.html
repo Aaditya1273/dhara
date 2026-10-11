@@ -8,7 +8,7 @@
 <section class="panel lane-quality mb-6" aria-labelledby="gap-h">
   <div class="panel-head"><div><h2 id="gap-h">Expected by policy, not current</h2><p>A missing report is a documentation gap. It is not evidence of contamination.</p></div></div>
   <ul>{% for t in missing %}
-    <li class="px-5 sm:px-8 py-3 border-t flex flex-wrap justify-between gap-3" style="border-color:var(--line)">
+    <li class="px-5 sm:px-8 py-3 border-t flex flex-wrap justify-between gap-3" style="border-color:var(--dhara-border)">
       <span class="text-sm"><a href="{% url 'qr_app:tank_detail' company.slug t.pk %}" class="font-semibold">{{ t.tank_code }}</a>
         {% if t.last_sample_date %}last sample {{ t.last_sample_date|date:"d M Y" }}, expected every {{ t.report_interval_days }} days{% else %}No water-quality report linked.{% endif %}</span>
       {% if membership.is_admin %}<a class="btn btn-ghost btn-sm" href="{% url 'qr_app:report_create' company.slug t.pk %}">Link report</a>{% endif %}

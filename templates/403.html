@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}You don't have access to this page{% endblock %}
 {% block content %}
-<p class="context" style="color:var(--tide)">Error 403</p>
+<p class="context" style="color:var(--dhara-blue)">Error 403</p>
 <h1 class="text-3xl mt-1" style="font-stretch:110%">You don't have access to this page</h1>
 <p class="muted mt-3">It belongs to an institution you are not a member of, or needs a warden role. If you scanned a QR code, the public tank page is read-only and needs no sign-in.</p>
 {% if error_id %}<p class="mono mt-4">Reference: {{ error_id }}</p>{% endif %}

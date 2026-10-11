@@ -31,7 +31,7 @@
         {% for ev in evidence %}
         <figure class="panel overflow-hidden">
           {% if ev.content_type == 'application/pdf' %}
-            <a href="{% url 'qr_app:evidence_file' company.slug ev.pk %}" target="_blank" rel="noopener" class="grid place-items-center h-48 font-semibold" style="background:var(--surface-2)">PDF document. Open in a new tab</a>
+            <a href="{% url 'qr_app:evidence_file' company.slug ev.pk %}" target="_blank" rel="noopener" class="grid place-items-center h-48 font-semibold" style="background:var(--dhara-canvas)">PDF document. Open in a new tab</a>
           {% else %}
             <a class="evidence-thumb" style="border:0;border-radius:0" href="{% url 'qr_app:evidence_file' company.slug ev.pk %}" target="_blank" rel="noopener"><img src="{% url 'qr_app:evidence_file' company.slug ev.pk %}" alt="{{ ev.get_kind_display }} for event {{ event.pk }}" loading="lazy"></a>
           {% endif %}
@@ -64,7 +64,7 @@
       {% if event.reviewed_by %}
         <div class="mt-3">{% badge 'review' event.review_status %}</div>
         <p class="text-sm mt-3 break-all">{{ event.reviewed_by.email }}<span class="block text-xs muted">{{ event.reviewed_at|date:"d M Y, H:i" }}</span></p>
-        {% if event.review_notes %}<blockquote class="mt-3 text-sm border-l-4 pl-3" style="border-color:var(--line-strong)">{{ event.review_notes|linebreaksbr }}</blockquote>{% endif %}
+        {% if event.review_notes %}<blockquote class="mt-3 text-sm border-l-4 pl-3" style="border-color:var(--dhara-border-strong)">{{ event.review_notes|linebreaksbr }}</blockquote>{% endif %}
       {% elif event.review_status == 'pending' %}
         <p class="text-sm muted mt-2">Waiting for a warden. The decision appears here once the server records it.</p>
       {% endif %}

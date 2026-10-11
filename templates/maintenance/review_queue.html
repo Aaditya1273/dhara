@@ -23,13 +23,13 @@
   <section class="panel" aria-labelledby="wait-h">
     <div class="panel-head"><h2 id="wait-h">Waiting on the submitter</h2></div>
     {% if waiting %}<ul>{% for e in waiting %}
-      <li class="px-5 sm:px-8 py-3 border-t flex justify-between gap-3" style="border-color:var(--line)"><div class="min-w-0"><a href="{% url 'qr_app:event_detail' company.slug e.pk %}">#{{ e.pk }}, {{ e.equipment.tank_code }}</a><p class="text-xs muted">{{ e.review_notes|truncatechars:90 }}</p></div>{% badge 'review' e.review_status %}</li>
+      <li class="px-5 sm:px-8 py-3 border-t flex justify-between gap-3" style="border-color:var(--dhara-border)"><div class="min-w-0"><a href="{% url 'qr_app:event_detail' company.slug e.pk %}">#{{ e.pk }}, {{ e.equipment.tank_code }}</a><p class="text-xs muted">{{ e.review_notes|truncatechars:90 }}</p></div>{% badge 'review' e.review_status %}</li>
     {% endfor %}</ul>{% else %}<div class="empty py-8"><p>No events are waiting for more evidence.</p></div>{% endif %}
   </section>
   <section class="panel" aria-labelledby="dec-h">
     <div class="panel-head"><h2 id="dec-h">Recently decided</h2></div>
     {% if recent %}<ul>{% for e in recent %}
-      <li class="px-5 sm:px-8 py-3 border-t flex justify-between gap-3" style="border-color:var(--line)"><div class="min-w-0"><a href="{% url 'qr_app:event_detail' company.slug e.pk %}">#{{ e.pk }}, {{ e.equipment.tank_code }}</a><p class="text-xs muted">{{ e.reviewed_by.email }}, {{ e.reviewed_at|date:"d M Y" }}</p></div>{% badge 'review' e.review_status %}</li>
+      <li class="px-5 sm:px-8 py-3 border-t flex justify-between gap-3" style="border-color:var(--dhara-border)"><div class="min-w-0"><a href="{% url 'qr_app:event_detail' company.slug e.pk %}">#{{ e.pk }}, {{ e.equipment.tank_code }}</a><p class="text-xs muted">{{ e.reviewed_by.email }}, {{ e.reviewed_at|date:"d M Y" }}</p></div>{% badge 'review' e.review_status %}</li>
     {% endfor %}</ul>{% else %}<div class="empty py-8"><p>No decisions yet.</p></div>{% endif %}
   </section>
 </div>

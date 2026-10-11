@@ -83,7 +83,7 @@
             <figcaption class="legend"><span><i class="water"></i>measured (hourly mean)</span><span><i class="forecast"></i>forecast</span><span><i class="errband"></i>±1.96 × held-out RMSE (approximate)</span></figcaption>
           </figure>
           {% with peak=twin.forecast_max_in_range %}{% if peak %}<p class="text-sm mt-3">Forecast peak within the calibrated range: <strong>{{ peak.0|floatformat:1 }} °C</strong> at {{ peak.1|date:"D H:i" }}.</p>{% endif %}{% endwith %}
-          {% if twin.any_extrapolated %}<p class="text-xs mt-1" style="color:var(--warn)">Some forecast hours have weather outside the calibrated range; they are left out of the peak.</p>{% endif %}
+          {% if twin.any_extrapolated %}<p class="text-xs mt-1" style="color:var(--dhara-warning)">Some forecast hours have weather outside the calibrated range; they are left out of the peak.</p>{% endif %}
           {% endif %}
         {% else %}
           <p class="text-sm">{{ twin_note }} The forecast needs about three days of hourly readings from an in-tank probe.</p>
@@ -94,7 +94,7 @@
           <a class="btn btn-ghost btn-sm" href="{% url 'qr_app:intervention_create' company.slug tank.pk %}">Log cooling intervention</a></div>{% endif %}
       </div>
       {% if effects %}
-      <div class="border-t" style="border-color:var(--line)">
+      <div class="border-t" style="border-color:var(--dhara-border)">
         <div class="panel-head"><div><h3 class="text-lg">Cooling interventions: measured effect</h3>
           <p>Measured daily peak after the change, compared with what the pre-change model predicts for the same weather. Assumes nothing else changed: refill schedule, water use, probe position.</p></div></div>
         <div class="table-wrap"><table class="table stack"><thead><tr><th>Change</th><th>Measured effect</th></tr></thead><tbody>{% for iv, ef in effects %}

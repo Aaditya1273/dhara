@@ -28,9 +28,9 @@
   <article class="panel panel-pad flex flex-col gap-4">
     <div class="flex justify-between gap-3">
       <div class="min-w-0"><p class="mono muted">{{ t.tank_code }}</p>
-        <h2 class="text-xl mt-1"><a href="{% url 'qr_app:tank_detail' company.slug t.pk %}" style="color:var(--ink);text-decoration:none">{{ t.name }}</a></h2>
+        <h2 class="text-xl mt-1"><a href="{% url 'qr_app:tank_detail' company.slug t.pk %}" style="color:var(--dhara-text);text-decoration:none">{{ t.name }}</a></h2>
         <p class="text-sm muted">{{ t.building|default:"No building set" }}{% if t.capacity_litres %}, {{ t.capacity_litres }} L{% endif %}</p></div>
-      <img src="{% url 'qr_app:tank_qr' company.slug t.pk %}" alt="" width="60" height="60" loading="lazy" class="rounded border shrink-0" style="border-color:var(--line)">
+      <img src="{% url 'qr_app:tank_qr' company.slug t.pk %}" alt="" width="60" height="60" loading="lazy" class="rounded border shrink-0" style="border-color:var(--dhara-border)">
     </div>
     <div class="flex flex-wrap gap-2">{% badge 'maintenance' t.maintenance_status %}{% if t.report_missing %}<span class="badge badge-warn">Report missing</span>{% endif %}</div>
     <dl class="kv">

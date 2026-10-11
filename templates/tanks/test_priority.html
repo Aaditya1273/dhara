@@ -12,7 +12,7 @@
     {% if rows %}
     <ol>
       {% for t, p, task_id in rows %}
-      <li class="px-5 sm:px-8 py-5 {% if not forloop.first %}border-t{% endif %}" style="border-color:var(--line)">
+      <li class="px-5 sm:px-8 py-5 {% if not forloop.first %}border-t{% endif %}" style="border-color:var(--dhara-border)">
         <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
           <div class="min-w-0">
             <a class="font-semibold text-lg" href="{% url 'qr_app:tank_detail' company.slug t.pk %}">{{ t.tank_code }}</a> <span class="muted text-sm">{{ t.name }}</span>

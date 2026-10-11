@@ -15,15 +15,15 @@
       <div class="min-w-0">
         <p class="context">{{ t.get_kind_display }}, <a href="{% url 'qr_app:tank_detail' company.slug t.equipment_id %}">{{ t.equipment.tank_code }}</a></p>
         <h2 class="text-lg">{{ t.title }}</h2>
-        <p>Due {{ t.due_date|date:"d M Y" }}{% if t.is_overdue %}, <strong style="color:var(--bad)">past due</strong>{% endif %}. Assigned to {{ t.assigned_to.email|default:"nobody" }}.{% if not t.created_by_id %} Opened by a schedule rule.{% endif %}</p>
+        <p>Due {{ t.due_date|date:"d M Y" }}{% if t.is_overdue %}, <strong style="color:var(--dhara-danger)">past due</strong>{% endif %}. Assigned to {{ t.assigned_to.email|default:"nobody" }}.{% if not t.created_by_id %} Opened by a schedule rule.{% endif %}</p>
         {% if t.related_event_id %}<a class="text-sm" href="{% url 'qr_app:event_detail' company.slug t.related_event_id %}">Related event #{{ t.related_event_id }}</a>{% endif %}
       </div>
       {% badge 'task' t.status %}
     </div>
     {% if t.status == 'resolved' %}
-      <div class="px-5 sm:px-8 pb-5"><blockquote class="text-sm border-l-4 pl-3" style="border-color:var(--good)">{{ t.resolution_notes }}<span class="block text-xs muted mt-1">{{ t.resolved_by.email }}, {{ t.resolved_at|date:"d M Y, H:i" }}</span></blockquote></div>
+      <div class="px-5 sm:px-8 pb-5"><blockquote class="text-sm border-l-4 pl-3" style="border-color:var(--dhara-success)">{{ t.resolution_notes }}<span class="block text-xs muted mt-1">{{ t.resolved_by.email }}, {{ t.resolved_at|date:"d M Y, H:i" }}</span></blockquote></div>
     {% else %}
-      <div class="grid md:grid-cols-2 gap-6 px-5 sm:px-8 pb-6 pt-4 border-t" style="border-color:var(--line)">
+      <div class="grid md:grid-cols-2 gap-6 px-5 sm:px-8 pb-6 pt-4 border-t" style="border-color:var(--dhara-border)">
         {% if t.assign_form %}
         <form method="post" action="{% url 'qr_app:followup_assign' company.slug t.pk %}" data-once data-pending="Updating assignment">{% csrf_token %}
           <div class="grid sm:grid-cols-2 gap-x-3">

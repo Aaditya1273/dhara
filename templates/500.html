@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}DHARA hit an error{% endblock %}
 {% block content %}
-<p class="context" style="color:var(--tide)">Error 500</p>
+<p class="context" style="color:var(--dhara-blue)">Error 500</p>
 <h1 class="text-3xl mt-1" style="font-stretch:110%">DHARA hit an error</h1>
 <p class="muted mt-3">The error has been logged with the reference below. Nothing you submitted in this request was saved. Try again in a moment.</p>
 {% if error_id %}<p class="mono mt-4">Reference: {{ error_id }}</p>{% endif %}

@@ -31,7 +31,7 @@
       {% if priorities %}
       <ul class="grid">
         {% for t, p in priorities %}
-        <li class="flex flex-col sm:flex-row gap-3 sm:items-start justify-between px-5 sm:px-8 py-4 border-t" style="border-color:var(--line)">
+        <li class="flex flex-col sm:flex-row gap-3 sm:items-start justify-between px-5 sm:px-8 py-4 border-t" style="border-color:var(--dhara-border)">
           <div class="min-w-0"><a class="font-semibold" href="{% url 'qr_app:tank_detail' company.slug t.pk %}">{{ t.tank_code }}</a> <span class="muted text-sm">{{ t.name }}</span>
             <p class="text-sm mt-1">{{ p.reasons.0 }}</p></div>
           <div class="flex sm:flex-col gap-2 sm:items-end shrink-0">{% badge 'priority' p.level %}<span class="text-xs font-semibold">{{ p.action_label }}</span></div>
@@ -84,8 +84,8 @@
       <div class="panel-head"><h2 id="mine-h">Assigned to you</h2></div>
       {% if my_tasks %}
       <ul class="px-5 sm:px-8 pb-4">{% for task in my_tasks %}
-        <li class="py-3 border-t" style="border-color:var(--line)"><p class="text-sm font-medium">{{ task.title }}</p>
-          <p class="text-xs {% if task.is_overdue %}font-semibold{% endif %}" style="color:{% if task.is_overdue %}var(--bad){% else %}var(--muted){% endif %}">{{ task.equipment.tank_code }}, due {{ task.due_date|date:"d M Y" }}{% if task.is_overdue %} (past due){% endif %}</p></li>
+        <li class="py-3 border-t" style="border-color:var(--dhara-border)"><p class="text-sm font-medium">{{ task.title }}</p>
+          <p class="text-xs {% if task.is_overdue %}font-semibold{% endif %}" style="color:{% if task.is_overdue %}var(--dhara-danger){% else %}var(--dhara-muted){% endif %}">{{ task.equipment.tank_code }}, due {{ task.due_date|date:"d M Y" }}{% if task.is_overdue %} (past due){% endif %}</p></li>
       {% endfor %}</ul>
       {% else %}<div class="empty py-8"><p>No open follow-ups are assigned to you.</p></div>{% endif %}
       <div class="panel-foot"><a href="{% url 'qr_app:followup_list' company.slug %}?show=mine">My follow-ups</a></div>
@@ -94,7 +94,7 @@
     <section class="panel" id="mine" aria-labelledby="sub-h">
       <div class="panel-head"><h2 id="sub-h">Your submissions</h2></div>
       {% if my_events %}<ul class="px-5 sm:px-8 pb-4">{% for e in my_events %}
-        <li class="py-3 border-t flex justify-between gap-3" style="border-color:var(--line)"><div class="min-w-0"><a class="text-sm font-medium" href="{% url 'qr_app:event_detail' company.slug e.pk %}">{{ e.get_event_type_display }}, {{ e.equipment.tank_code }}</a><p class="text-xs muted">work date {{ e.work_date|date:"d M Y" }}</p></div>{% badge 'review' e.review_status %}</li>
+        <li class="py-3 border-t flex justify-between gap-3" style="border-color:var(--dhara-border)"><div class="min-w-0"><a class="text-sm font-medium" href="{% url 'qr_app:event_detail' company.slug e.pk %}">{{ e.get_event_type_display }}, {{ e.equipment.tank_code }}</a><p class="text-xs muted">work date {{ e.work_date|date:"d M Y" }}</p></div>{% badge 'review' e.review_status %}</li>
       {% endfor %}</ul>
       {% else %}<div class="empty py-8"><p>Nothing submitted yet. Open a tank and choose Record maintenance.</p></div>{% endif %}
     </section>
