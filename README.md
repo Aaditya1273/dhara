@@ -4,9 +4,9 @@
 
 DHARA helps hostels, schools and campuses keep water-storage maintenance records, supporting evidence, human review decisions, maintenance schedules and water-quality reports in one traceable workflow. Every tank gets a QR code that opens a read-only status page.
 
-> **Status:** hackathon prototype (Environmental Hacks 2026, Heat & Water track). The features below marked ✅ are implemented and covered by automated tests in this repository. **Amazon S3 evidence storage is verified against real AWS** (ap-south-1, 2026-10-11), and the app is **deployed on Amazon EC2 with HTTPS**. AWS IoT Core is not verified yet; see [AWS integration](#aws-integration).
+> **Status:** hackathon prototype (Environmental Hacks 2026, Heat & Water track). The features below marked ✅ are implemented; application features are covered by automated tests in this repository, and the AWS rows were verified by hand on real AWS as described in [AWS integration](#aws-integration). Verified on real AWS (ap-south-1, 2026-10-11): the app is **deployed on Amazon EC2 with HTTPS**, evidence is stored in a **private Amazon S3 bucket**, and the **AWS IoT Core** pipeline runs end to end with a **simulated ESP32 on [Wokwi](https://wokwi.com)**: MQTT over TLS with an X.509 device certificate, IoT rules forwarding to DHARA and archiving to S3. The firmware has not yet run on a physical board. See [AWS integration](#aws-integration).
 
-**New: thermal twin and measured cooling.** A ₹500 in-tank probe (ESP32 + DS18B20) streams tank-water temperature through **AWS IoT Core**. DHARA fits a transparent heat-balance model per tank, validates it on held-out data before showing any forecast, and measures, rather than assumes, whether a cooling intervention (reflective paint, shade, insulation) lowered the tank's daily peak.
+**New: thermal twin and measured cooling.** A low-cost in-tank probe (ESP32 + DS18B20) streams tank-water temperature through **AWS IoT Core** (verified with a simulated ESP32 on Wokwi; not yet on physical hardware). DHARA fits a transparent heat-balance model per tank, validates it on held-out data before showing any forecast, and measures, rather than assumes, whether a cooling intervention (reflective paint, shade, insulation) lowered the tank's daily peak.
 
 **Tank Test Priority.** Summer heat speeds up the loss of chlorine residual in stored water ([*Water Research* 2024 review](https://doi.org/10.1016/j.watres.2024.121913)), and exposed rooftop tanks heat up most. DHARA records real field readings (tank-water temperature, free chlorine) and combines how old they are with the campus weather forecast. It then tells staff **which tank to measure or review next**, with every rule that fired shown in plain words. It ranks *measurement work*; it does not predict chlorine levels or declare water safe.
 
@@ -59,7 +59,7 @@ There is no blended "safety score". A missing report is shown as **"No water-qua
 | ✅ | **Upload validation**: extension allow-list, 8 MB limit, real content check (Pillow decode / PDF header), generated storage names |
 | ✅ | **Private file serving**: evidence and reports only through access-checked views (local) or 5-minute presigned URLs (S3) |
 | ✅ | **Per-institution roles** (warden / technician) and invitation links |
-| ✅ | **Storage switch**: local disk or private Amazon S3 bucket (django-storages + boto3), tested against mocked S3 |
+| ✅ | **Storage switch**: local disk or private Amazon S3 bucket (django-storages + boto3), tested against mocked S3 and verified on a real bucket |
 | ✅ | **Field measurements**: tank-water temperature and free chlorine with measured-at vs entered-at time, method (thermometer/probe, DPD strip/comparator/photometer), entered-by, °F→°C and ppm→mg/L conversion, plausibility ranges (form + DB constraint), audited. Kept separate from lab reports |
 | ✅ | **Tank thermal profile**: placement (rooftop, elevated, ground, underground, indoor), sun exposure, material |
 | ✅ | **Weather context**: Open-Meteo daily max **air** temperature for the campus location in `TIME_ZONE`, cached for 1 h. It never raises: failures fall back to ranking without weather. Never shown or stored as tank-water temperature |
@@ -68,38 +68,38 @@ There is no blended "safety score". A missing report is shown as **"No water-qua
 | ✅ | **Thermal twin** (`qr_app/twin.py`): hourly heat balance `dT = a·G + b·(Tair − T) + c` fitted by least squares on the tank's own data plus Open-Meteo air temperature and solar radiation; free-running hold-out validation; forecast only if plausible and within the error limit, never beyond the validated horizon, out-of-range weather flagged |
 | ✅ | **Measured cooling interventions**: measured daily peak vs the pre-intervention model's prediction for the same weather, with a 95% Student-t interval and degree-hours above 30 °C avoided |
 | ✅ | **Strip/thermometer photo evidence** on field measurements, stored privately with SHA-256 |
-| ⚠️ | **ESP32 firmware and AWS IoT Core setup** (`firmware/`, `deploy/aws/iot/`): written and JSON-validated, **not yet compiled, flashed or run on AWS** |
+| ✅ | **AWS IoT Core pipeline** (`deploy/aws/iot/`), verified 2026-10-11 with a **simulated** ESP32 + DS18B20 on Wokwi (`firmware/wokwi/`): MQTT over TLS with an X.509 device certificate → rule `dhara_forward` → DHARA ingest API (readings stored on the tank), and rule `dhara_archive` → S3 raw archive with the token removed |
+| ✅ | **Live AWS deployment**: Amazon EC2 (Docker, Caddy HTTPS, no SSH port, access via Systems Manager) with private S3 evidence storage |
+| ⚠️ | **Physical probe**: firmware for a real ESP32 (`firmware/dhara_tank_probe/`) is written but not yet flashed or run on hardware |
 | 🔜 | Chlorine-decay projection (deliberately not shipped: would need per-site calibration data and validation above 28 °C) |
 | 🔜 | Outbreak Radar: tank→block mapping with anonymous symptom counts (future work; needs privacy design and health-authority input) |
-| 🔜 | Live S3 + RDS deployment on AWS (code and instructions ready; not yet run against a real account) |
+| 🔜 | Managed PostgreSQL (Amazon RDS) instead of SQLite on the EC2 volume |
 | 🔜 | Email/SMS reminders, Hindi UI translation, CSV/PDF audit export, S3 Object Lock retention |
 
 ## Interface and design system
 
-**DHARA Fluid Infrastructure.** One source of truth: `static/css/style.css`. It holds tokens, components, the two shells, the landing styles, motion and reduced-motion rules.
+**DHARA brand system: blue and white.** Tokens (`--dhara-*`) live in `static/css/style.css`, the single source of truth for the signed-in app, public pages and shared components (buttons, badges, cards, forms).
 
 | Layer | What it is |
 |---|---|
-| Colour | Abyss `#091D25`, River `#164B4C`, Tide `#2E7D79`, Signal `#C9F27A` (only for the primary action and the current-page marker), Mist `#EEF2EE`, Heat `#9A5A10`. Semantic good/warn/bad/info. Chart series water `#008C82`, air `#B8640C` and chlorine `#2266A0` passed a palette validator (lightness, chroma, colour-blind and normal-vision separation, contrast) |
-| Type | Anek Latin, a variable font with width and weight axes from the Indian foundry Ek Type, for display; expanded widths on the landing page and normal width in the app. IBM Plex Sans for UI with tabular numerals. IBM Plex Mono only for tank IDs and SHA-256 digests. All self-hosted under SIL OFL; Anek is subset to the characters used |
+| Colour | Brand blue `#0866F5` (hover `#0757D9`), sky `#3B82F6`, pale `#EAF3FF`, canvas `#F7FAFF`, navy `#0F172A` text. Semantic good / warn / danger / info pairs. Chart series water `#0866F5`, air `#B8640C`, chlorine `#008C82`, checked with a palette validator (lightness, chroma, colour-blind and normal-vision separation, contrast) |
+| Type | Instrument Serif for editorial headlines, Inter for the interface (tabular numerals), IBM Plex Mono for tank IDs and SHA-256 digests. All self-hosted under SIL OFL |
 | Status | Every badge carries a distinct glyph shape (circle, triangle, diamond, ring, bar) as well as colour, so meaning never depends on colour alone |
-| Evidence lanes | Field measurements (heat), maintenance (tide) and water quality (info) have separate coloured lanes, so they are never visually merged |
-| Motion | Tokens `--ease-flow` (signature), `--ease-ui` and `--ease-exit`, with 140 to 640 ms durations. One landing entrance sequence. Native scroll-driven reveals that are movement-only and never hide text. Cross-page View Transitions. Real upload progress from the browser's upload events. Everything is disabled under `prefers-reduced-motion` |
-| Charts | Server-rendered SVG with no chart library. Single series per chart, never a second y-axis. Observed values are solid, forecasts dashed with an approximate band, air temperature dotted. Points have hover and keyboard tooltips, and every chart has a data-table view. Charts appear only from two real readings; otherwise an empty state says what is needed |
+| Evidence lanes | Maintenance evidence (blue) and water-quality observations (teal) are drawn as separate lanes and never visually merged |
+| Charts | Server-rendered SVG with no chart library. Measured values solid, forecasts dashed with a band, air temperature dotted. Points have hover and keyboard tooltips and a data-table view. Charts appear only from two real readings |
+| Motion | Scroll-linked and entrance motion on the landing page; everything is disabled or replaced by static layouts under `prefers-reduced-motion` |
 
-**Build:** Tailwind utilities are compiled to `static/css/tw.css` with `npm install && npm run build:css`, and the output is committed, so Node is not needed at runtime. The previous Tailwind CDN dev runtime and Alpine.js were removed. Behaviour lives in `static/js/dhara.js`, about 150 lines of progressive enhancement: every form works without it.
+**Landing page** (`frontend/landing/`): React + TypeScript with [Motion](https://motion.dev), one folder per section (Hero, Problem, Layers, Priority, Lanes, Workflow, Trust, Closing). Django still serves the page and passes it real data through `json_script`: the rule engine's output for the example situations, the configured thresholds and the URLs. Highlights: a scroll-drawn five-layer chart with a crosshair readout, a testing-priority console that steps through the engine's real outcomes as you scroll, pinned evidence lanes and workflow steps, and a velocity-aware trust marquee with a pause control. Small screens and reduced motion get stacked, static versions, and a `<noscript>` fallback lists the essentials. All example values on the landing page are labelled as illustrations.
 
-**Measured, 2026-10-11, Lighthouse 12** (simulated mobile):
+**Build:** Node is only needed to rebuild front-end assets; both outputs are committed.
+```bash
+npm install
+npm run build:css       # Tailwind utilities -> static/css/tw.css
+npm run build:landing   # type-check + Vite -> static/landing/landing.js and landing.css
+```
+Behaviour in the signed-in app lives in `static/js/dhara.js`, progressive enhancement only: every form works without it.
 
-| Page | Where | Performance / Accessibility / Best practices | LCP | CLS |
-|---|---|---|---|---|
-| Landing | live EC2 (HTTPS, WhiteNoise) | 100 / 100 / 100 | 1.7 s | 0.018 |
-| Public QR | live EC2 (HTTPS, WhiteNoise) | 100 / 100 / 100 | 1.2 s | 0 |
-| Landing | local dev server | 98 / 100 / 100 | 2.3 s | 0 |
-
-Signed-in pages were not measured with Lighthouse.
-
-**Responsive check:** 17 pages at 360, 390 and 768 px with no element wider than the viewport, plus a 5-width pass (including 1366 and 1440) with no console errors.
+**Checked in a browser (2026-10-11):** the landing page at 1440, 1280, 1024, 390 and 360 px wide with no horizontal overflow and no console errors, plus reduced-motion and JavaScript-off renders; every signed-in page rendered for the warden and technician roles with no server errors. Lighthouse has not been re-run since the redesign.
 
 ## Thermal twin
 
@@ -208,17 +208,17 @@ flowchart LR
     App -->|hourly air temp + solar| OM[Open-Meteo]
     Phone[Technician / Warden browser] -->|HTTPS| App
     Visitor[QR scan] -->|/qr/token/| App
-    subgraph App[Django 5.2 app · gunicorn · Docker]
+    subgraph App[Django 5.2 app · gunicorn · Docker on Amazon EC2 · Caddy HTTPS]
       Views[Views + per-institution access mixins] --> Services[services.py<br/>state rules, validation, digests, audit]
       Services --> ORM[Django ORM]
       Services --> Storage[Django storage API]
     end
-    ORM --> DB[(SQLite dev / PostgreSQL e.g. Amazon RDS)]
+    ORM --> DB[(SQLite on a persistent volume / any PostgreSQL)]
     Storage -->|STORAGE_BACKEND=local| Disk[(MEDIA_ROOT, never publicly routed)]
     Storage -->|STORAGE_BACKEND=s3| S3[(Amazon S3 private bucket<br/>presigned GET, 300 s)]
 ```
 
-Server-rendered Django templates with Tailwind (CDN) and Alpine.js for the mobile menu. No frontend framework and no ML model: the workflow is the product.
+Server-rendered Django templates with compiled Tailwind utilities and a small vanilla-JS file for the signed-in app; the public landing page is a React + TypeScript bundle. No ML model: the workflow is the product.
 
 ## Data model
 
@@ -259,11 +259,13 @@ Roles live on `Membership`, so being a warden in one institution grants nothing 
 
 ## AWS integration
 
-**AWS IoT Core: tank probes** (written; not yet run on AWS).
+**AWS IoT Core: tank probes** ✅ **verified end to end on real AWS, 2026-10-11, with a simulated device.**
 - Each probe is an IoT *thing* with its own X.509 certificate. Its policy allows it to connect only as itself and to publish only to `dhara/<thing>/telemetry`.
 - Rule 1 archives raw readings to S3 under `dhara/iot-raw/`, with the device token excluded.
 - Rule 2 forwards the readings over HTTPS to `/api/sensors/ingest/`, where DHARA checks the device token and validates every reading.
 - Setup steps, policies and a verification checklist are in [`deploy/aws/iot/README.md`](deploy/aws/iot/README.md).
+
+**What was checked:** a Wokwi-simulated ESP32 + DS18B20 running [`firmware/wokwi/sketch_aws.ino`](firmware/wokwi/sketch_aws.ino) (thing `dhara-wokwi-01`) connected to AWS IoT Core with its certificate and published every 20 s. The forward rule delivered every message to the live DHARA ingest API, where the readings appear on the demo tank with source `dhara-wokwi-01`; the archive rule wrote one S3 object per message, without the token. A second sketch, [`firmware/wokwi/sketch.ino`](firmware/wokwi/sketch.ino), tests the direct HTTPS path without AWS IoT. The simulated probe reports a set temperature: these are pipeline tests, not tank measurements. The HTTP rule destination had to be confirmed through DHARA's built-in confirmation handler and then enabled, since a confirmed destination starts disabled.
 
 **Amazon S3: evidence and report storage** ✅ **verified on real AWS, 2026-10-11.**
 
@@ -295,13 +297,13 @@ Roles live on `Membership`, so being a warden in one institution grants nothing 
 
 **Verification status:**
 - `MockedS3Tests` runs the real django-storages/boto3 path against [moto](https://github.com/getmoto/moto). It checks the object exists, has no public grant, its digest verifies, and downloads redirect to a signed URL. **Passing.**
-- `LiveS3Tests` uploads, reads back, verifies and deletes against a real bucket. **Skipped**: no AWS credentials were available while building. To run:
+- `LiveS3Tests` uploads, reads back, verifies and deletes against a real bucket. **Passed** against the real bucket on 2026-10-11; it is skipped automatically when no credentials are set. To run:
   ```bash
   export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=ap-south-1
   DHARA_S3_TEST_BUCKET=your-private-test-bucket python manage.py test qr_app.tests.LiveS3Tests
   ```
 - **Recommended bucket setup:** Block Public Access on, SSE-S3 encryption, versioning on. Give the app an IAM role with `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` on `arn:aws:s3:::BUCKET/dhara/*` and `s3:ListBucket` on the bucket.
-- **Database:** any PostgreSQL through `DATABASE_URL`, e.g. Amazon RDS. No LLM or AI service is used or needed.
+- **Database:** the live demo uses SQLite on a persistent Docker volume (single instance). Any PostgreSQL works through `DATABASE_URL`, e.g. Amazon RDS. No LLM or AI service is used or needed.
 
 ## Security and evidence integrity
 
@@ -458,7 +460,7 @@ Static files are served by WhiteNoise. Don't use SQLite or local media storage o
 9. **Thermal twin (real probe data only):** register a sensor on the tank, flash the ESP32 and let it log for **at least 3 days**: 72 consecutive hourly steps are needed before validation can pass. Before then, the tank page shows how much more data is needed. Once it passes, it shows the held-out error, the forecast chart and the forecast peak. Test Priority then uses the forecast water temperature.
    **Cooling result:** log the intervention (for example white paint) after 3+ days of baseline, then keep logging 3+ more days. The tank page reports the measured effect with its confidence interval, whatever it turns out to be.
 10. **Test priority (real readings only):** open *Test priority*. With no readings, both tanks show "No free-chlorine reading on record" and get one follow-up each. Take a **real** DPD strip and thermometer reading at an actual tank (yours or a hostel's) and enter it under *Record measurement*. The ranking updates and shows the rule that fired. The weather panel shows the live Open-Meteo forecast for the campus location (`seed_demo --lat/--lon`). If the real forecast is below 35 °C, heat context honestly stays off. To show the heat rule, change `PRIORITY_FORECAST_HOT_C` and say on camera that it is a policy setting.
-11. **AWS:** follow `deploy/aws/iot/README.md`, show the MQTT test client receiving probe messages and the S3 raw archive, and run with `STORAGE_BACKEND=s3`, upload evidence and show the private object and presigned URL. This needs a real bucket.
+11. **AWS:** follow `deploy/aws/iot/README.md`. Without hardware, paste `firmware/wokwi/sketch_aws.ino` and `diagram.json` into a new Wokwi ESP32 project (libraries: OneWire, DallasTemperature, PubSubClient), fill in the endpoint, certificate, key and sensor token locally, and start it. Show the serial monitor publishing, the AWS IoT MQTT test client (`dhara/#`) receiving messages, a reading appearing on the tank page, and the S3 raw archive. Say on camera that the device is simulated. For storage, upload evidence with `STORAGE_BACKEND=s3` and show the private object and the presigned URL.
 
 ## Impact metrics to measure
 
@@ -486,17 +488,17 @@ Water-quality outcomes need proper testing and a separate evaluation.
 - Rule-based follow-ups are generated when the overview or follow-up page loads. There is no background scheduler or notifications yet.
 - The twin is a single-node lumped model. It ignores stratification, refills and draw-off except as an average term (*c*), and is only as good as its held-out validation on that tank.
 - An intervention effect is an observational before/after comparison against a model, not a randomised trial. A second untreated tank logged in parallel makes it far more convincing.
-- The ESP32 firmware and AWS IoT setup have not been compiled, flashed or run.
+- The AWS IoT path is verified only with a simulated ESP32 on Wokwi. The firmware has not been flashed onto a physical board, and the simulated probe reports a set value, not a tank measurement.
 - Test Priority uses the readings people enter. It cannot detect a falsified reading, and DPD strips have limited precision.
 - The thermal profile is descriptive context. DHARA does not estimate tank-water temperature from air temperature.
 - Weather comes from a third-party forecast (Open-Meteo) and is shown only as air-temperature context.
 - No email delivery: invitations are links the warden shares by hand.
-- The Tailwind CDN build is fine for the prototype; for production, compile the CSS.
+- The landing page is rendered by JavaScript; with JavaScript off a short HTML fallback is shown instead.
 - The upstream billing templates (YooKassa) are still in Russian and only reachable with `BILLING_ENABLED=True`.
 
 ## Roadmap
 
-1. Live AWS deployment (App Runner + RDS + S3) and the live S3 test in CI.
+1. Flash the probe firmware on a physical ESP32 and log a real tank; move from SQLite to Amazon RDS; run the live S3 test in CI.
 2. Field pilot for Test Priority: collect paired temperature and chlorine readings across summer to learn whether a per-site chlorine-decay estimate is justified, before shipping any projection.
 3. **Outbreak Radar** (future): map tanks to hostel blocks and watch anonymous daily GI case counts. This needs a privacy review, an institutional ethics process and health-authority involvement before any build.
 4. Pilot with one consenting institution. Measure the metrics above against its current process.
