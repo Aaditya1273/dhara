@@ -1,0 +1,15 @@
+.closing { position: relative; overflow: hidden; isolation: isolate; background: radial-gradient(120% 140% at 50% 0%, #2a7bf7 0%, var(--dhara-blue) 45%, var(--dhara-blue-hover) 100%);
+  color: #fff; text-align: center; padding-block: clamp(6rem, 12vw, 10rem); }
+.ripples { position: absolute; left: 50%; top: 100%; width: 0; height: 0; z-index: -1; }
+.ripples i { position: absolute; left: 50%; top: 50%; border-radius: 50%; border: 1px solid rgb(255 255 255 / 22%); translate: -50% -50%; }
+.ripples i:nth-child(1) { width: 40rem; height: 40rem; } .ripples i:nth-child(2) { width: 62rem; height: 62rem; border-color: rgb(255 255 255 / 16%); }
+.ripples i:nth-child(3) { width: 86rem; height: 86rem; border-color: rgb(255 255 255 / 11%); } .ripples i:nth-child(4) { width: 112rem; height: 112rem; border-color: rgb(255 255 255 / 7%); }
+.closing h2 { font-family: var(--font-display); color: #fff; font-size: clamp(3rem, 6vw, 5.5rem); line-height: 1.02; letter-spacing: -.01em; font-weight: 400; }
+.closing h2 .serif { color: #dbeafe; }
+.closing .lede { margin: var(--s5) auto 0; max-width: 36rem; color: #dbeafe; font-size: clamp(1.0625rem, .4vw + 1rem, 1.25rem); }
+.closing .hero-actions { display: flex; flex-wrap: wrap; gap: var(--s3); justify-content: center; margin-top: var(--s6); }
+.closing .btn-primary { --btn-bg: #fff; --btn-fg: var(--dhara-blue); --btn-bd: #fff; box-shadow: 0 10px 24px -12px rgb(15 23 42 / 45%); }
+.closing .btn-primary:hover { --btn-bg: var(--dhara-blue-pale); --btn-bd: var(--dhara-blue-pale); }
+.closing .btn-ghost { --btn-fg: #fff; --btn-bd: rgb(255 255 255 / 60%); }
+.closing .btn-ghost:hover { --btn-bg: rgb(255 255 255 / 12%); --btn-bd: #fff; }
+.closing :focus-visible { outline-color: #fff; }

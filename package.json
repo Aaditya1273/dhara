@@ -1,12 +1,22 @@
 {
   "name": "dhara-ui",
   "private": true,
-  "description": "Builds static/css/tw.css from the Django templates. Output is committed; Node is not needed at runtime.",
+  "description": "Builds static/css/tw.css and the landing page bundle (static/landing/). Output is committed; Node is not needed at runtime.",
   "scripts": {
     "build:css": "tailwindcss -c tailwind.config.js -i static/src/tw.css -o static/css/tw.css --minify",
-    "watch:css": "tailwindcss -c tailwind.config.js -i static/src/tw.css -o static/css/tw.css --watch"
+    "watch:css": "tailwindcss -c tailwind.config.js -i static/src/tw.css -o static/css/tw.css --watch",
+    "build:landing": "tsc -p frontend && vite build --config frontend/vite.config.mts",
+    "dev:landing": "vite build --config frontend/vite.config.mts --watch"
   },
   "devDependencies": {
-    "tailwindcss": "3.4.17"
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "motion": "^14.1.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tailwindcss": "3.4.17",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
   }
 }

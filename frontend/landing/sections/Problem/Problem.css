@@ -1,0 +1,24 @@
+.problem { display: grid; gap: var(--s7); align-items: center; }
+@media (min-width: 1000px) { .problem { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--s8); } .problem .sec-head { margin-bottom: 0; } }
+.problem-scene { display: grid; gap: var(--s5); }
+@media (min-width: 760px) { .problem-scene { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; } }
+
+/* Ruled paper with a margin line: the register people already keep. */
+.register { position: relative; padding: var(--s6) var(--s6) var(--s5) calc(var(--s6) + 1rem); border-radius: var(--radius-lg); background-color: #fffdf7;
+  background-image: linear-gradient(90deg, transparent 2.1rem, rgb(185 28 28 / 28%) 2.1rem, rgb(185 28 28 / 28%) calc(2.1rem + 1px), transparent calc(2.1rem + 1px)),
+    repeating-linear-gradient(to bottom, transparent 0, transparent 2.35rem, rgb(8 102 245 / 12%) 2.35rem, rgb(8 102 245 / 12%) calc(2.35rem + 1px));
+  box-shadow: 0 30px 60px -30px rgb(15 23 42 / 35%), 0 2px 6px rgb(15 23 42 / 6%); transform-origin: 50% 80%; will-change: transform; }
+.register .hand { font-size: clamp(1.05rem, .5vw + .9rem, 1.2rem); line-height: 2.35rem; color: #1e3a8a; font-style: italic; }
+.register .hand.title { font-style: normal; font-weight: 650; color: var(--dhara-navy); }
+.register .hand.faint { color: var(--dhara-muted); }
+.register-gap { margin-top: var(--s3); font-size: var(--fs-xs); font-weight: 600; color: var(--dhara-danger); letter-spacing: .01em; }
+.register .stamp { position: absolute; right: var(--s5); top: var(--s5); padding: .35rem .8rem; border: 2.5px solid var(--dhara-success); border-radius: 8px;
+  color: var(--dhara-success); font-weight: 800; font-size: var(--fs-sm); letter-spacing: .14em; background: rgb(220 252 231 / 60%); }
+
+.questions { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
+.questions li { position: relative; padding: var(--s4) var(--s4) var(--s4) 3.6rem; background: var(--dhara-white); border-radius: var(--radius-lg);
+  border: 1px solid var(--dhara-border); box-shadow: var(--shadow-card); }
+.q-mark { position: absolute; left: var(--s4); top: 50%; translate: 0 -50%; width: 1.9rem; height: 1.9rem; display: grid; place-items: center;
+  border-radius: 50%; background: var(--dhara-blue); color: #fff; font-family: var(--font-display); font-size: 1.25rem; line-height: 1; }
+.questions strong { display: block; font-weight: 600; color: var(--dhara-navy); }
+.questions li > span:last-child { display: block; font-size: var(--fs-sm); color: var(--dhara-muted); margin-top: .15rem; }

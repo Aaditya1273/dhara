@@ -1,7 +1,6 @@
 /* DHARA interface behaviour. Progressive enhancement only: every form and link works without this file. */
 (function () {
   'use strict';
-  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function busy(form, on) {
     form.querySelectorAll('button[type=submit]').forEach(function (b) {
@@ -24,14 +23,6 @@
     busy(form, true);
     if (form.dataset.pending) announce(form.dataset.pending);
   });
-  /* Landing nav: transparent over the hero, floating pill once the page scrolls. */
-  var lpHeader = document.querySelector('.lp-header');
-  if (lpHeader) {
-    var floatNav = function () { lpHeader.classList.toggle('is-floating', window.scrollY > 8); };
-    window.addEventListener('scroll', floatNav, { passive: true });
-    floatNav();
-  }
-
   // Restore buttons if the page is shown again from the back/forward cache.
   window.addEventListener('pageshow', function () {
     document.querySelectorAll('form[data-sent]').forEach(function (f) { delete f.dataset.sent; busy(f, false); });
@@ -123,68 +114,6 @@
       });
     };
     kind.addEventListener('change', sync); sync();
-  }
-
-  /* 6. Accessible tabs (landing product demonstration). */
-  document.querySelectorAll('[role=tablist]').forEach(function (list) {
-    var tabs = Array.prototype.slice.call(list.querySelectorAll('[role=tab]'));
-    function select(tab, animate) {
-      tabs.forEach(function (t) {
-        var on = t === tab, panel = document.getElementById(t.getAttribute('aria-controls'));
-        t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1;
-        panel.hidden = !on;
-        if (on && animate && !reduceMotion) { panel.classList.remove('is-entering'); void panel.offsetWidth; panel.classList.add('is-entering'); }
-      });
-    }
-    select(tabs.filter(function (t) { return t.getAttribute('aria-selected') === 'true'; })[0] || tabs[0]);
-    tabs.forEach(function (t, i) {
-      t.addEventListener('click', function () { select(t, true); });
-      t.addEventListener('keydown', function (e) {
-        var n = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
-        if (n) { e.preventDefault(); var next = tabs[(i + n + tabs.length) % tabs.length]; select(next, true); next.focus(); }
-      });
-    });
-  });
-
-  /* 7. Scroll reveals: one observer, each element revealed once. Without JS (or IO) content is simply visible. */
-  var reveals = document.querySelectorAll('.reveal, .lane-row');
-  if ('IntersectionObserver' in window) {
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('is-in'); io.unobserve(en.target); } });
-    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.12 });
-    reveals.forEach(function (el) { io.observe(el); });
-  } else { reveals.forEach(function (el) { el.classList.add('is-in'); }); }
-
-  /* 8. Five-layer illustration: focus one layer, explain it. Pressing the active layer again shows all. */
-  var stage = document.querySelector('[data-layer-stage]');
-  if (stage) {
-    var btns = document.querySelectorAll('[data-layer-btn]');
-    btns.forEach(function (b) {
-      b.addEventListener('click', function () {
-        var key = b.dataset.layerBtn, active = stage.dataset.focus === key;
-        btns.forEach(function (o) { o.setAttribute('aria-pressed', String(!active && o === b)); });
-        if (active) delete stage.dataset.focus; else stage.dataset.focus = key;
-        stage.querySelectorAll('.layer-explain [data-layer]').forEach(function (d) {
-          d.classList.toggle('is-on', active ? d.dataset.layer === 'all' : d.dataset.layer === key);
-        });
-      });
-    });
-  }
-
-  /* 9. Workflow story: the step nearest the middle of the viewport becomes active; the aside shows progress. */
-  var steps = document.querySelectorAll('.steps .step');
-  if (steps.length && 'IntersectionObserver' in window) {
-    var bar = document.querySelector('[data-story-bar]'), label = document.querySelector('[data-story-label]');
-    var so = new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) {
-        if (!en.isIntersecting) return;
-        var idx = Array.prototype.indexOf.call(steps, en.target);
-        steps.forEach(function (s, i) { s.classList.toggle('is-active', i <= idx); });
-        if (bar) bar.style.width = ((idx + 1) / steps.length * 100) + '%';
-        if (label) label.textContent = 'Step ' + (idx + 1) + ' of ' + steps.length + ': ' + en.target.dataset.step;
-      });
-    }, { rootMargin: '-45% 0px -45% 0px' });
-    steps.forEach(function (s) { so.observe(s); });
   }
 
 })();

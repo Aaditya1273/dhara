@@ -102,7 +102,10 @@ def priority_scenarios(now=None):
             ('Thermal profile', 'Rooftop, full sun'),
         ]
         out.append({'key': key, 'title': title, 'evidence': evidence, 'p': p,
-                    'due': {'urgent': 'today', 'high': 'tomorrow', 'medium': 'in 3 days', 'low': 'in 3 days'}.get(p.level)})
+                    'due': {'urgent': 'today', 'high': 'tomorrow', 'medium': 'in 3 days', 'low': 'in 3 days'}.get(p.level),
+                    'inputs': {'chlorine': cl.value if cl else None, 'chlorineAgeH': round(prio.hours_old(cl, now), 1) if cl else None,
+                               'waterC': wt.value if wt else None, 'waterAgeH': round(prio.hours_old(wt, now), 1) if wt else None,
+                               'airMaxC': forecast.max_next_days}})
     return out
 
 
@@ -114,9 +117,31 @@ class LandingPageView(TemplateView):
         ctx = super().get_context_data(**kwargs)
         demo = Equipment.objects.filter(company__name=DEMO_INSTITUTION, tank_code='TANK-A').first()
         ctx['demo_qr_url'] = reverse('public_tank_status', args=[demo.public_token]) if demo else None
-        ctx['scenarios'] = priority_scenarios()
-        ctx['cfg'] = settings.DHARA_PRIORITY
+        ctx['landing'] = landing_payload(self.request, ctx['demo_qr_url'])
         return ctx
+
+
+def landing_payload(request, demo_qr_url):
+    """Everything the React landing page needs, rendered into the page with json_script."""
+    from django.templatetags.static import static
+    from .templatetags.dhara import BADGES
+    cfg = settings.DHARA_PRIORITY
+    scenarios = []
+    for s in priority_scenarios():
+        p = s['p']
+        label, tone = BADGES['priority'][p.level]
+        scenarios.append({'key': s['key'], 'title': s['title'], 'evidence': s['evidence'], 'inputs': s['inputs'], 'due': s['due'],
+                          'level': p.level, 'levelLabel': label, 'levelTone': tone, 'actionLabel': p.action_label,
+                          'actionable': p.actionable, 'reasons': list(p.reasons), 'context': list(p.context)})
+    return {
+        'authenticated': request.user.is_authenticated,
+        'urls': {'home': reverse('landing_page'), 'register': reverse('register'), 'login': reverse('login'), 'dashboard': reverse('select_company')},
+        'demoQrUrl': demo_qr_url,
+        'img': {'hero1672': static('img/hero-1672.webp'), 'hero1100': static('img/hero-1100.webp'), 'heroMobile': static('img/hero-mobile.webp')},
+        'cfg': {'chlorineMin': float(cfg['CHLORINE_MIN_MG_L']), 'chlorineMaxAgeH': float(cfg['CHLORINE_MAX_AGE_HOURS']),
+                'warmC': float(cfg['WATER_WARM_C']), 'hotC': float(cfg['FORECAST_HOT_C'])},
+        'scenarios': scenarios,
+    }
 
 
 def healthz(request):

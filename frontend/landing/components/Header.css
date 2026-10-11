@@ -1,0 +1,26 @@
+/* The header strip is click-through; only the bar catches pointer events. */
+.lp-header { position: fixed; inset: 0 0 auto 0; z-index: var(--z-nav); padding: 0 var(--page-gutter); pointer-events: none;
+  transition: padding var(--motion-normal) var(--ease-brand); }
+.lp-bar { pointer-events: auto; display: flex; align-items: center; justify-content: space-between; gap: var(--s4);
+  max-width: var(--content-max); min-height: var(--nav-height); margin-inline: auto; padding: 0;
+  border: 1px solid transparent; border-radius: var(--radius-pill); background-color: transparent;
+  transition: max-width var(--motion-slow) var(--ease-brand), min-height var(--motion-slow) var(--ease-brand), padding var(--motion-slow) var(--ease-brand),
+    background-color var(--motion-slow) var(--ease-brand), border-color var(--motion-slow) var(--ease-brand), box-shadow var(--motion-slow) var(--ease-brand); }
+.lp-header.is-floating { padding-top: 12px; }
+.lp-header.is-floating .lp-bar { max-width: 72rem; min-height: 60px; padding: 0 8px 0 20px; background-color: rgb(255 255 255 / 78%);
+  -webkit-backdrop-filter: saturate(160%) blur(16px); backdrop-filter: saturate(160%) blur(16px);
+  border-color: rgb(226 232 240 / 80%); box-shadow: var(--shadow-floating); }
+.lp-header:not(.is-floating) .btn-ghost { --btn-bg: rgb(255 255 255 / 85%); }
+.lp-links { display: none; }
+@media (min-width: 1000px) { .lp-links { display: flex; gap: var(--s1); } }
+.lp-links a { color: var(--dhara-text); opacity: .82; font-size: var(--fs-sm); padding: var(--s2) var(--s3); border-radius: var(--radius-pill);
+  transition: opacity var(--motion-fast) var(--ease-brand), background-color var(--motion-fast) var(--ease-brand); }
+.lp-links a:hover { opacity: 1; text-decoration: none; background: rgb(8 102 245 / 6%); }
+.lp-account { display: flex; align-items: center; gap: var(--s1); }
+.lp-account .btn-sm { min-height: 38px; padding: 0 1rem; }
+@media (max-width: 479px) {
+  .lp-header.is-floating { padding-top: 8px; }
+  .lp-header.is-floating .lp-bar { padding-left: 14px; min-height: 54px; }
+}
+.xs-show { display: none; }
+@media (max-width: 479px) { .xs-hide { display: none; } .xs-show { display: inline; } }

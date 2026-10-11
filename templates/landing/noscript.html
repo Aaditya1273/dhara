@@ -1,0 +1,19 @@
+{% load dhara %}
+{# Shown only when JavaScript is off: the essentials of the landing page as plain HTML. #}
+<div class="wrap" style="padding-block: 3rem 4rem">
+  <a class="brand" href="{% url 'landing_page' %}">{% include 'partials/logo.html' %}<span class="brand-word">DHARA</span></a>
+  <p class="mt-8" style="color:var(--dhara-blue);font-weight:650;font-size:var(--fs-xs);letter-spacing:.16em;text-transform:uppercase">Water · Heat · Accountability</p>
+  <h1 style="font-family:var(--font-display);font-weight:400;font-size:clamp(2.6rem,6vw,4.5rem);line-height:1;margin-top:1rem">Water deserves <span class="serif">more than a record.</span></h1>
+  <p class="mt-4" style="max-width:36rem;color:var(--dhara-muted)">Measure changing water conditions, prioritise testing when it matters, and keep a traceable record of every response.</p>
+  <p class="mt-6 flex flex-wrap gap-3">
+    {% if user.is_authenticated %}<a class="btn btn-primary" href="{% url 'select_company' %}">Open dashboard</a>
+    {% else %}<a class="btn btn-primary" href="{% url 'register' %}">Register your institution</a><a class="btn btn-ghost" href="{% url 'login' %}">Sign in</a>{% endif %}
+    {% if demo_qr_url %}<a class="btn" href="{{ demo_qr_url }}">See a live tank page</a>{% endif %}
+  </p>
+  <h2 class="mt-10" style="font-size:var(--fs-lg)">Heat-aware testing priority, from DHARA's rule engine</h2>
+  <ul class="mt-3" style="display:grid;gap:.5rem;padding:0;list-style:none">
+    {% for s in landing.scenarios %}<li>{{ s.title }}: {% badge 'priority' s.level %} {{ s.actionLabel }}</li>{% endfor %}
+  </ul>
+  <h2 class="mt-10" style="font-size:var(--fs-lg)">Not claimed</h2>
+  <p class="mt-2" style="color:var(--dhara-muted)">DHARA does not claim that water is safe to drink, that a photo is genuine, that a forecast is a measurement, or that the log is tamper-proof.</p>
+</div>

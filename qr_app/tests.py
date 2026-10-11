@@ -1017,8 +1017,23 @@ class InterfaceTests(DharaTestCase):
         t = Equipment.objects.create(company=demo, tank_code='TANK-A', name='Demo', maintenance_interval_days=30)
         r = self.client.get('/')
         self.assertEqual(r.context['demo_qr_url'], reverse('public_tank_status', args=[t.public_token]))
-        self.assertContains(r, 'Illustration, not measured data')
-        self.assertContains(r, 'Example readings with illustrative demo data')
+        self.assertEqual(r.context['landing']['demoQrUrl'], r.context['demo_qr_url'])
+        self.assertContains(r, 'id="landing-root"')
+        self.assertContains(r, 'id="landing-data"')
+        self.assertContains(r, '<noscript>')
+
+    def test_landing_payload_carries_real_rule_engine_output(self):
+        from .views import priority_scenarios
+        r = self.client.get('/')
+        data = r.context['landing']
+        expected = [s['p'].level for s in priority_scenarios()]
+        self.assertEqual([s['level'] for s in data['scenarios']], expected)
+        self.assertEqual(len(set(expected)), len(expected))     # the four situations show four different outcomes
+        self.assertEqual(data['cfg']['chlorineMin'], float(dj_settings.DHARA_PRIORITY['CHLORINE_MIN_MG_L']))
+        self.assertFalse(data['authenticated'])
+        import json
+        json.dumps(data)                                         # serialisable for json_script
+        self.assertContains(r, data['scenarios'][0]['actionLabel'])   # noscript fallback lists the outcomes
 
     def test_series_chart_requires_two_points_and_draws_threshold(self):
         from .views import series_chart
@@ -1056,6 +1071,6 @@ class InterfaceTests(DharaTestCase):
         html = r.content.decode()
         self.assertNotIn('cdn.tailwindcss.com', html)
         self.assertNotIn('alpinejs', html)
-        for path in ('css/tw.css', 'css/style.css', 'js/dhara.js', 'fonts/inter-var.woff2'):
+        for path in ('css/tw.css', 'css/style.css', 'js/dhara.js', 'fonts/inter-var.woff2', 'landing/landing.js', 'landing/landing.css'):
             from django.contrib.staticfiles import finders
             self.assertIsNotNone(finders.find(path), path)

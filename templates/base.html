@@ -98,27 +98,45 @@
 </main>
 {% block site_footer %}
 <footer class="site-footer">
-  <div class="wrap inner">
-    <div>
-      <a class="brand" href="{% url 'landing_page' %}">{% include 'partials/logo.html' %}<span class="brand-word">DHARA</span></a>
-      <p class="mt-3 max-w-md">Heat-aware water monitoring and an evidence ledger for institutional water tanks. A maintenance record or photograph alone does not certify that water is safe to drink.</p>
+  <div class="wrap">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <a class="brand" href="{% url 'landing_page' %}">{% include 'partials/logo.html' %}<span class="brand-word">DHARA</span></a>
+        <p>Heat-aware water monitoring and an evidence ledger for institutional water tanks.</p>
+        <p class="footer-note">A maintenance record or photograph alone does not certify that water is safe to drink.</p>
+      </div>
+      <nav class="footer-cols" aria-label="Footer">
+        <div>
+          <h3>Product</h3>
+          <ul>
+            <li><a href="{% url 'register' %}">Register an institution</a></li>
+            <li><a href="{% url 'login' %}">Sign in</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>Explore</h3>
+          <ul>
+            <li><a href="{% url 'landing_page' %}#workflow">How it works</a></li>
+            <li><a href="{% url 'landing_page' %}#priority">Testing priority</a></li>
+            <li><a href="{% url 'landing_page' %}#evidence">Evidence</a></li>
+            <li><a href="{% url 'landing_page' %}#trust">Trust</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>Project</h3>
+          <ul>
+            <li>Built on QRInvent (MIT, © RSLV)</li>
+            <li>Environmental Hacks 2026 prototype</li>
+          </ul>
+        </div>
+      </nav>
     </div>
-    <div>
-      <h3>Product</h3>
-      <ul>
-        <li><a href="{% url 'landing_page' %}#workflow">How it works</a></li>
-        <li><a href="{% url 'register' %}">Register an institution</a></li>
-        <li><a href="{% url 'login' %}">Sign in</a></li>
-      </ul>
-    </div>
-    <div>
-      <h3>Project</h3>
-      <ul>
-        <li>Built on QRInvent (MIT, RSLV)</li>
-        <li>Environmental Hacks 2026 prototype</li>
-      </ul>
+    <div class="footer-bottom">
+      <span>DHARA · Water · Heat · Accountability</span>
+      <span>Measured, recorded, forecast, estimated, decided.</span>
     </div>
   </div>
+  <p class="footer-word" aria-hidden="true">DHARA</p>
 </footer>
 {% endblock %}
 {% endif %}
