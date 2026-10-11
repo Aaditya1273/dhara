@@ -222,7 +222,8 @@ Flash the firmware on a physical ESP32 and log a real tank through a summer; mov
 Built on [QRInvent](LICENSE) (MIT, © 2026 RSLV; the first commit is the unmodified upstream import). Weather: Open-Meteo. Device simulation: Wokwi. Fonts: Inter, Instrument Serif, IBM Plex Mono (SIL OFL). Video photos via Wikimedia Commons: BohunkaNika (CC BY-SA 4.0), Shixart1985 (CC BY 2.0), MohammedSuman22 (CC BY-SA 4.0), SuSanA Secretariat (CC BY 2.0), Massachusetts DEP (CC BY 2.0), Timothy A. Gonsalves (CC BY-SA 4.0). Video music: "Moon Walk" by Eugenio Mininni (Mixkit licence). Voice: Kokoro TTS. Full technical detail, data model, security notes and configuration: [`docs/TECHNICAL.md`](docs/TECHNICAL.md).
 
 ## AI tools used
-Claude Code (Anthropic) wrote most of the code, tests, documentation and the demo video under the author's direction and review.
+Claude Code (Anthropic) wrote most of the code, tests, documentation and the demo video under the team's direction and review.
 
-## Author
-[@Aaditya1273](https://github.com/Aaditya1273)
+## Team
+- [@Aaditya1273](https://github.com/Aaditya1273)
+- [@utkarsh684](https://github.com/utkarsh684)
