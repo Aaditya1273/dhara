@@ -89,9 +89,15 @@ There is no blended "safety score". A missing report is shown as **"No water-qua
 
 **Build:** Tailwind utilities are compiled to `static/css/tw.css` with `npm install && npm run build:css`, and the output is committed, so Node is not needed at runtime. The previous Tailwind CDN dev runtime and Alpine.js were removed. Behaviour lives in `static/js/dhara.js`, about 150 lines of progressive enhancement: every form works without it.
 
-**Measured, 2026-10-11, Lighthouse 12** (simulated mobile, local dev server):
-- landing: performance 98, accessibility 100, best practices 100, LCP 2.3 s, CLS 0;
-- public QR page: 100 / 100 / 100, LCP 1.8 s.
+**Measured, 2026-10-11, Lighthouse 12** (simulated mobile):
+
+| Page | Where | Performance / Accessibility / Best practices | LCP | CLS |
+|---|---|---|---|---|
+| Landing | live EC2 (HTTPS, WhiteNoise) | 100 / 100 / 100 | 1.7 s | 0.018 |
+| Public QR | live EC2 (HTTPS, WhiteNoise) | 100 / 100 / 100 | 1.2 s | 0 |
+| Landing | local dev server | 98 / 100 / 100 | 2.3 s | 0 |
+
+Signed-in pages were not measured with Lighthouse.
 
 **Responsive check:** 17 pages at 360, 390 and 768 px with no element wider than the viewport, plus a 5-width pass (including 1366 and 1440) with no console errors.
 
