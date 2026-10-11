@@ -52,3 +52,4 @@ build/
 /video/audio/_tmp/
 /video/audio/*.wav
 /video/audio/*.mp3
+/video/assets/
