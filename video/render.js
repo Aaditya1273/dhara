@@ -3,12 +3,12 @@ const { chromium } = require('playwright-core');
 const { spawn } = require('child_process');
 const EXE = process.env.HOME + '/.cache/ms-playwright/chromium_headless_shell-1247/chrome-headless-shell-linux64/chrome-headless-shell';
 const [, , mode, a, b, out] = process.argv; // mode: stills|range
-const FPS = 30;
+const FPS = +(process.env.FPS || 30);
 (async () => {
   const browser = await chromium.launch({ executablePath: EXE, args: ['--allow-file-access-from-files', '--disable-web-security'] });
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on('pageerror', (e) => console.error('PAGEERR', e.message));
-  await page.goto('file://' + __dirname + '/film.html');
+  await page.goto('file://' + __dirname + '/' + (process.env.FILM || 'film.html'));
   await page.evaluate(() => window.ready);
   const cdp = await page.context().newCDPSession(page);
   const grab = async (t) => { await page.evaluate((t) => window.seek(t), t); const r = await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 93, optimizeForSpeed: true }); return Buffer.from(r.data, 'base64'); };

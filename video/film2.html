@@ -1,0 +1,470 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>DHARA film</title>
+<style>
+@font-face { font-family: 'Inter'; src: url('../static/fonts/inter-var.woff2') format('woff2'); font-weight: 100 900; }
+@font-face { font-family: 'Serif'; src: url('../static/fonts/instrument-serif.woff2') format('woff2'); }
+@font-face { font-family: 'Mono'; src: url('../static/fonts/plex-mono-400.woff2') format('woff2'); }
+html, body { margin: 0; background: #000; }
+canvas { display: block; }
+</style></head>
+<body><canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// Every frame is a pure function of time: seek(t) draws the whole film at t seconds.
+const W = 1920, H = 1080, cv = document.getElementById('c'), g = cv.getContext('2d');
+const C = { blue: '#0866F5', sky: '#3B82F6', light: '#93C5FD', pale: '#EAF3FF', navy: '#0B1222', ink: '#04070C',
+  white: '#FFFFFF', muted: '#94A3B8', dim: '#64748B', teal: '#14B8A6', heat: '#F59E0B', red: '#EF4444', paper: '#FBF7EC' };
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const eio = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const eout = (t) => 1 - Math.pow(1 - t, 3);
+const eout5 = (t) => 1 - Math.pow(1 - t, 5);
+const ein = (t) => t * t * t;
+function spring(t, w = 16, z = 0.72) { if (t <= 0) return 0; const wd = w * Math.sqrt(1 - z * z); return 1 - Math.exp(-z * w * t) * (Math.cos(wd * t) + (z * w / wd) * Math.sin(wd * t)); }
+function rng(seed) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+// ---------- assets ----------
+const IMG = {};
+const WOKWI = [];
+function load(name, src) { return new Promise((res) => { const i = new Image(); i.onload = () => { IMG[name] = i; res(); }; i.onerror = () => res(); i.src = src; }); }
+window.ready = (async () => {
+  const P = 'cap/product/';
+  const names = ['t2_form0', 't2_type1', 't2_type2', 't2_type3', 't2_type4', 'w1_dashboard', 'w2_priority', 'w3_tank', 'w35_queue', 'w4_event', 'p1_public'];
+  const jobs = names.map((n) => load(n, P + n + '.jpg'));
+  jobs.push(load('hero', '../static/img/hero-1672.webp'));
+  const wk = await fetch('cap/wokwi/list.json').then((r) => r.json());
+  wk.forEach((f) => { const ms = parseInt(f.slice(2, 8), 10); WOKWI.push({ ms, name: 'wk' + ms }); jobs.push(load('wk' + ms, 'cap/wokwi/' + f)); });
+  window.PROOF = await fetch('cap/proof.json').then((r) => r.json());
+  window.TL = await fetch('timeline.json').then((r) => r.json()); buildScenes();
+  await Promise.all(jobs);
+  await document.fonts.load('600 40px Inter'); await document.fonts.load('40px Serif'); await document.fonts.load('20px Mono');
+  return true;
+})();
+
+// ---------- drawing helpers ----------
+function font(size, weight = 600, fam = 'Inter') { g.font = `${weight} ${size}px ${fam === 'Inter' ? 'Inter' : fam}`; }
+function text(s, x, y, { size = 40, weight = 600, fam = 'Inter', color = C.white, align = 'left', alpha = 1, ls = 0, base = 'alphabetic' } = {}) {
+  if (alpha <= 0) return; g.save(); g.globalAlpha *= alpha; font(size, weight, fam); g.fillStyle = color; g.textAlign = align; g.textBaseline = base;
+  g.letterSpacing = ls + 'px'; g.fillText(s, x, y); g.restore();
+}
+// Words rise out of a mask line, one after another.
+function rise(s, x, y, t, { size = 72, weight = 650, fam = 'Inter', color = C.white, align = 'left', stagger = 0.07, dur = 0.7, ls = -1, colors = null } = {}) {
+  font(size, weight, fam); g.letterSpacing = ls + 'px';
+  const words = s.split(' '), sp = g.measureText(' ').width, ws = words.map((w) => g.measureText(w).width);
+  const total = ws.reduce((a, b) => a + b, 0) + sp * (words.length - 1);
+  let cx = align === 'center' ? x - total / 2 : align === 'right' ? x - total : x;
+  words.forEach((w, i) => {
+    const p = eout5(prog(t, i * stagger, i * stagger + dur));
+    if (p > 0) {
+      g.save(); g.beginPath(); g.rect(cx - 10, y - size * 1.05, ws[i] + 20, size * 1.35); g.clip();
+      text(w, cx, y + (1 - p) * size * 1.1, { size, weight, fam, color: colors ? colors[i] || color : color, ls, alpha: clamp(p * 1.4) });
+      g.restore();
+    }
+    cx += ws[i] + sp;
+  });
+}
+function rr(x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+function dropPath(cx, cy, r, stretch = 1) {
+  g.beginPath(); const top = cy - r * 2.1 * stretch;
+  g.moveTo(cx, top);
+  g.bezierCurveTo(cx + r * 0.25, top + r * 0.9 * stretch, cx + r, cy - r * 0.55, cx + r, cy);
+  g.arc(cx, cy, r, 0, Math.PI, false);
+  g.bezierCurveTo(cx - r, cy - r * 0.55, cx - r * 0.25, top + r * 0.9 * stretch, cx, top);
+  g.closePath();
+}
+function drawDrop(cx, cy, r, stretch = 1, alpha = 1) {
+  g.save(); g.globalAlpha = alpha; dropPath(cx, cy, r, stretch);
+  const gr = g.createLinearGradient(cx - r, cy - r * 2, cx + r, cy + r); gr.addColorStop(0, '#9CC8FF'); gr.addColorStop(0.5, C.blue); gr.addColorStop(1, '#0646B8');
+  g.fillStyle = gr; g.fill();
+  g.beginPath(); g.ellipse(cx - r * 0.38, cy - r * 0.15, r * 0.16, r * 0.34, -0.4, 0, Math.PI * 2); g.fillStyle = 'rgba(255,255,255,.75)'; g.fill();
+  g.restore();
+}
+function logo(cx, cy, s, alpha = 1) { // the DHARA drop with two white waves
+  g.save(); g.globalAlpha = alpha; g.translate(cx, cy); g.scale(s / 32, s / 32); g.translate(-16, -16);
+  g.beginPath(); g.moveTo(16, 3.5); g.bezierCurveTo(16, 3.5, 7.5, 13.1, 7.5, 19.1); g.arc(16, 19.1, 8.5, Math.PI, 0, true);
+  g.bezierCurveTo(24.5, 13.1, 16, 3.5, 16, 3.5); g.closePath(); g.fillStyle = C.blue; g.fill();
+  g.strokeStyle = '#fff'; g.lineWidth = 1.7; g.lineCap = 'round';
+  [19.6, 23.2].forEach((y, i) => { g.globalAlpha = alpha * (i ? 0.55 : 1); g.beginPath(); g.moveTo(11.2, y); g.bezierCurveTo(12.8, y - 1.3, 14.4, y - 1.3, 16, y); g.bezierCurveTo(17.6, y + 1.3, 19.2, y + 1.3, 20.8, y); g.stroke(); });
+  g.restore();
+}
+function bg(top, bottom) { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, top); gr.addColorStop(1, bottom); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+function vignette(a = 0.55) { const gr = g.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.95); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, `rgba(0,0,0,${a})`); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+function grain(t, a = 0.035) { const r = rng(Math.floor(t * 30) + 7); g.save(); g.globalAlpha = a; g.fillStyle = '#fff'; for (let i = 0; i < 900; i++) g.fillRect(r() * W, r() * H, 1.5, 1.5); g.restore(); }
+function chip(s, x, y, { color = C.blue, fg = '#fff', size = 22, alpha = 1, dot = true } = {}) {
+  if (alpha <= 0) return; g.save(); g.globalAlpha = alpha; font(size, 650); g.letterSpacing = '1.5px';
+  const w = g.measureText(s).width + (dot ? 56 : 36); rr(x, y, w, size * 2, size); g.fillStyle = color; g.fill();
+  if (dot) { g.beginPath(); g.arc(x + 24, y + size, 6, 0, Math.PI * 2); g.fillStyle = fg; g.fill(); }
+  text(s, x + (dot ? 40 : 18), y + size * 1.36, { size, weight: 650, color: fg, ls: 1.5 }); g.restore(); return w;
+}
+function windowFrame(x, y, w, h, { alpha = 1, bar = 44, title = '', dark = false } = {}) {
+  g.save(); g.globalAlpha = alpha;
+  g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 80; g.shadowOffsetY = 30; rr(x, y, w, h, 22); g.fillStyle = dark ? '#0E1525' : '#fff'; g.fill();
+  g.shadowColor = 'transparent'; rr(x, y, w, bar, [22, 22, 0, 0]); g.fillStyle = dark ? '#131C30' : '#F1F5F9'; g.fill();
+  ['#FF5F57', '#FEBC2E', '#28C840'].forEach((c, i) => { g.beginPath(); g.arc(x + 26 + i * 22, y + bar / 2, 7, 0, Math.PI * 2); g.fillStyle = c; g.fill(); });
+  if (title) { font(18, 600, 'Mono'); const tw = g.measureText(title).width + 32; rr(x + w / 2 - tw / 2, y + 9, tw, bar - 18, 13); g.fillStyle = C.blue; g.fill(); text(title, x + w / 2, y + bar / 2 + 6, { size: 17, weight: 600, fam: 'Mono', color: '#fff', align: 'center' }); }
+  g.restore();
+}
+function cursor(x, y, press = 0, alpha = 1) {
+  g.save(); g.globalAlpha = alpha; g.translate(x, y); const s = 1.7 * (1 - press * 0.16); g.scale(s, s);
+  g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 8; g.shadowOffsetY = 3;
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(0, 22); g.lineTo(5.5, 17); g.lineTo(9.5, 26); g.lineTo(13, 24.5); g.lineTo(9, 16); g.lineTo(16, 16); g.closePath();
+  g.fillStyle = '#0B0F19'; g.fill(); g.shadowColor = 'transparent'; g.lineWidth = 1.6; g.strokeStyle = '#fff'; g.stroke(); g.restore();
+}
+function clickRing(x, y, p) { if (p <= 0 || p >= 1) return; g.save(); g.globalAlpha = (1 - p) * 0.8; g.strokeStyle = C.blue; g.lineWidth = 3; g.beginPath(); g.arc(x, y, 10 + eout(p) * 34, 0, Math.PI * 2); g.stroke(); g.restore(); }
+function track(t, keys) { // piecewise eased keyframes [[time, value], ...]
+  if (t <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) { const [t1, v1] = keys[i], [t0, v0] = keys[i - 1]; if (t <= t1) { const p = eio(prog(t, t0, t1)); return Array.isArray(v0) ? v0.map((v, j) => lerp(v, v1[j], p)) : lerp(v0, v1, p); } }
+  return keys[keys.length - 1][1];
+}
+
+// ---------- scenes (start, end, draw(local t)) ----------
+const SCENES = [];
+const scene = (a, b, fn) => SCENES.push({ a, b, fn });
+
+const OLD = {};
+// S4 ARCHITECTURE: probe -> AWS IoT Core -> rules -> DHARA on EC2 + S3 archive. The camera follows the message.
+const NODES = { probe: [330, 540], iot: [960, 540], ec2: [1580, 330], s3: [1580, 760] };
+function node(k, label, sub, p, kind) {
+  const [x, y] = NODES[k]; if (p <= 0) return; g.save(); g.globalAlpha = p; g.translate(x, y); const s = lerp(0.85, 1, eout(p)); g.scale(s, s);
+  rr(-170, -110, 340, 220, 30); g.fillStyle = '#0E1A30'; g.fill(); g.strokeStyle = k === 'iot' ? C.sky : 'rgba(147,197,253,.35)'; g.lineWidth = k === 'iot' ? 3 : 2; g.stroke();
+  g.strokeStyle = C.light; g.fillStyle = C.light; g.lineWidth = 4;
+  if (kind === 'chip') { rr(-34, -76, 68, 52, 8); g.stroke(); for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(i * 12, -76); g.lineTo(i * 12, -88); g.moveTo(i * 12, -24); g.lineTo(i * 12, -12); g.stroke(); } }
+  if (kind === 'cloud') { g.beginPath(); g.arc(-22, -46, 22, Math.PI * 0.6, Math.PI * 1.8); g.arc(8, -60, 28, Math.PI * 1.1, Math.PI * 1.95); g.arc(32, -42, 20, Math.PI * 1.5, Math.PI * 0.5); g.closePath(); g.stroke(); }
+  if (kind === 'server') { for (let i = 0; i < 3; i++) { rr(-36, -86 + i * 22, 72, 18, 4); g.stroke(); g.beginPath(); g.arc(24, -77 + i * 22, 3, 0, Math.PI * 2); g.fill(); } }
+  if (kind === 'bucket') { g.beginPath(); g.ellipse(0, -78, 34, 10, 0, 0, Math.PI * 2); g.moveTo(-34, -78); g.lineTo(-26, -24); g.ellipse(0, -24, 26, 8, 0, Math.PI, 0, true); g.lineTo(34, -78); g.stroke(); }
+  text(label, 0, 34, { size: 34, weight: 650, align: 'center' }); text(sub, 0, 74, { size: 22, weight: 500, color: C.muted, align: 'center' });
+  g.restore();
+}
+function wire(a, b, p, label, lp = 1) {
+  const [x1, y1] = NODES[a], [x2, y2] = NODES[b]; const sx = x1 + 175, ex = x2 - 175;
+  g.save(); g.strokeStyle = 'rgba(147,197,253,.35)'; g.lineWidth = 3; g.setLineDash([10, 10]); g.lineDashOffset = -p * 200; g.beginPath(); g.moveTo(sx, y1);
+  g.bezierCurveTo(sx + (ex - sx) * 0.5, y1, sx + (ex - sx) * 0.5, y2, ex, y2); g.stroke(); g.restore();
+  if (label) text(label, (sx + ex) / 2, Math.min(y1, y2) + (y1 === y2 ? -26 : (y2 - y1) / 2 - 20), { size: 22, weight: 600, color: C.light, align: 'center', alpha: lp });
+}
+function packet(a, b, p, col = '#fff') {
+  if (p <= 0 || p >= 1) return; const [x1, y1] = NODES[a], [x2, y2] = NODES[b]; const sx = x1 + 175, ex = x2 - 175, u = eio(p);
+  const bx = (t) => Math.pow(1 - t, 3) * sx + 3 * Math.pow(1 - t, 2) * t * (sx + (ex - sx) * 0.5) + 3 * (1 - t) * t * t * (sx + (ex - sx) * 0.5) + t * t * t * ex;
+  const by = (t) => Math.pow(1 - t, 3) * y1 + 3 * Math.pow(1 - t, 2) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t * y2;
+  for (let k = 8; k >= 0; k--) { const tt = clamp(u - k * 0.012); g.beginPath(); g.arc(bx(tt), by(tt), 12 - k * 1.1, 0, Math.PI * 2); g.fillStyle = k ? `rgba(147,197,253,${0.5 - k * 0.05})` : col; g.fill(); }
+}
+OLD.arch = ((t) => {
+  bg('#050B18', C.ink);
+  g.save(); g.strokeStyle = 'rgba(59,130,246,.07)'; g.lineWidth = 1; for (let x = 0; x < W; x += 60) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); } for (let y = 0; y < H; y += 60) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); } g.restore();
+  // camera: start close on the probe, follow the message, pull out to the whole system
+  const cam = track(t, [[0, [330, 540, 1.7]], [2.5, [330, 540, 1.6]], [7.5, [960, 540, 1.35]], [10.5, [1250, 540, 1.1]], [13.5, [960, 540, 0.92]], [18.8, [960, 540, 0.9]]]);
+  g.save(); g.translate(W / 2, H / 2); g.scale(cam[2], cam[2]); g.translate(-cam[0], -cam[1]);
+  wire('probe', 'iot', t * 0.3, 'MQTT · TLS · X.509 device certificate', prog(t, 3.2, 4));
+  if (t > 7.6) { wire('iot', 'ec2', t * 0.3, 'rule dhara_forward → HTTPS', prog(t, 9.6, 10.4)); wire('iot', 's3', t * 0.3, 'rule dhara_archive', prog(t, 11.4, 12.2)); }
+  node('probe', 'ESP32 + DS18B20', 'in-tank probe', prog(t, 0, 0.6), 'chip');
+  node('iot', 'AWS IoT Core', 'ap-south-1', prog(t, 3.6, 4.3), 'cloud');
+  node('ec2', 'DHARA', 'on Amazon EC2', prog(t, 9.2, 9.9), 'server');
+  node('s3', 'Amazon S3', 'raw archive, token removed', prog(t, 11.0, 11.7), 'bucket');
+  for (let k = 0; k < 6; k++) { const s0 = 4.0 + k * 2.6; packet('probe', 'iot', prog(t, s0, s0 + 1.6)); packet('iot', 'ec2', prog(t, s0 + 1.7 + (k ? 0 : 3.6), s0 + 3.0 + (k ? 0 : 3.6))); if (k || t > 11) packet('iot', 's3', prog(t, s0 + 1.8 + (k ? 0 : 5.4), s0 + 3.1 + (k ? 0 : 5.4)), C.light); }
+  g.restore();
+  rise('How a reading travels', 120, 140, t - 0.3, { size: 46, weight: 600, color: 'rgba(255,255,255,.9)' });
+  vignette(0.5);
+});
+
+// S5 LIVE PROOF: the simulated board publishes; S3 and the live database on EC2 show the same reading.
+function wokwiFrame(ms) { let f = WOKWI[0]; for (const w of WOKWI) { if (w.ms <= ms) f = w; else break; } return f && IMG[f.name]; }
+function terminal(x, y, w, h, lines, t, alpha) {
+  windowFrame(x, y, w, h, { dark: true, title: 'aws-cli · ap-south-1', alpha });
+  g.save(); g.globalAlpha = alpha; g.beginPath(); g.rect(x, y + 44, w, h - 44); g.clip();
+  let yy = y + 92, shown = 0;
+  for (const [at, str, kind] of lines) {
+    if (t < at) break;
+    const isCmd = kind === 'cmd', n = isCmd ? Math.floor(clamp((t - at) / Math.max(0.6, str.length * 0.025)) * str.length) : str.length;
+    const col = isCmd ? '#fff' : kind === 'hi' ? '#5EEAD4' : kind === 'ok' ? C.light : '#94A3B8';
+    text((isCmd ? '$ ' : '') + str.slice(0, n), x + 28, yy, { size: 19, weight: 400, fam: 'Mono', color: col });
+    yy += kind === 'gap' ? 18 : 34; shown++;
+  }
+  g.restore();
+}
+OLD.proof = ((t) => {
+  bg('#06101F', C.ink);
+  const split = eio(prog(t, 10.4, 11.4));
+  const wx = lerp(260, 70, split), ww = lerp(1400, 820, split), wh = ww * (1010 / 955) * 0.84;
+  windowFrame(wx, 120, ww, wh + 44, { title: 'wokwi.com · simulated ESP32' });
+  const fr = wokwiFrame(lerp(0, 12300, prog(t, 0.5, 24)) | 0);
+  if (fr) { g.save(); rr(wx, 164, ww, wh, [0, 0, 22, 22]); g.clip();
+    const z = track(t, [[0, 1.0], [4, 1.0], [6.5, 1.55], [9.8, 1.55], [11.4, 1.0]]), fy = track(t, [[0, 0.45], [4, 0.45], [6.5, 0.86], [9.8, 0.86], [11.4, 0.5]]);
+    const dw = ww * z, dh = dw * (fr.height / fr.width) * 0.84 / 0.84; g.drawImage(fr, wx + ww / 2 - 0.5 * dw, 164 + wh * fy - fy * dh, dw, dh); g.restore(); }
+  chip('SIMULATED ESP32 · WOKWI', wx, 60, { color: '#1E293B', fg: C.light, size: 18, alpha: clamp(t * 2) });
+  chip('REAL AWS', wx + 380, 60, { color: C.blue, size: 18, alpha: clamp((t - 9.6) * 3) });
+  const P = window.PROOF;
+  if (split > 0) {
+    const lines = [[11.6, P.cmd1, 'cmd'], ...P.s3.map((l, i) => [13.0 + i * 0.12, l, 'out']), [13.8, '', 'gap'], [14.2, P.cmd2, 'cmd'], ...P.objLines.map((l, i) => [15.8 + i * 0.1, l, 'hi']), [16.6, '', 'gap'], [17.0, P.cmd3, 'cmd'], ...P.db.map((l, i) => [18.6 + i * 0.15, l, i ? 'out' : 'ok'])];
+    terminal(lerp(W, 940, split), 120, 920, 860, lines, t, split);
+  }
+  if (t > 22.5) { const a = eout(prog(t, 22.5, 23.2)); chip('SAME READING · 11:43:00 UTC · S3 → DHARA ON EC2', 940, 1000, { color: C.blue, size: 20, alpha: a }); }
+});
+
+// S7 IMPACT: three benefits, then the one thing DHARA never claims.
+OLD.impact = ((t) => {
+  bg('#040A16', C.ink);
+  const B = [['No guessing', 'which tank to test.', 0.8, 'rank'], ['No lost', 'evidence.', 2.6, 'hash'], ['Every decision,', 'named and timed.', 4.3, 'time']];
+  const out = eio(prog(t, 6.6, 7.2));
+  B.forEach(([a, b, at, kind], i) => {
+    if (t < at) return; const p = eout5(prog(t, at, at + 0.7)), x = 330 + i * 630;
+    g.save(); g.globalAlpha = p * (1 - out); g.translate(0, (1 - p) * 50 - out * 40);
+    const lt = t - at;
+    if (kind === 'rank') { ['TANK-B · Medium', 'TANK-A · Urgent'].forEach((s, k) => { const sw = spring(lt - 0.5, 9, 0.7), yy = 330 + (k === 1 ? lerp(90, 0, sw) : lerp(0, 90, sw)); rr(x - 200, yy, 400, 70, 18); g.fillStyle = k === 1 ? 'rgba(239,68,68,.18)' : 'rgba(255,255,255,.06)'; g.fill(); text(s, x - 170, yy + 46, { size: 28, weight: 600, color: k === 1 ? '#FCA5A5' : C.muted }); }); }
+    if (kind === 'hash') { const hx = '9f2c41abe07d3c5e88a10b6fd2e47c19'; text(hx.slice(0, Math.floor(clamp(lt / 1.2) * 16)), x, 380, { size: 34, fam: 'Mono', weight: 400, color: '#5EEAD4', align: 'center' }); text(hx.slice(16, 16 + Math.floor(clamp((lt - 0.6) / 1.2) * 16)), x, 430, { size: 34, fam: 'Mono', weight: 400, color: '#5EEAD4', align: 'center' }); text('SHA-256', x, 320, { size: 22, weight: 650, color: C.muted, align: 'center', ls: 3 }); }
+    if (kind === 'time') { for (let k = 0; k < 3; k++) { const kp = eout(prog(lt, k * 0.3, k * 0.3 + 0.5)); g.globalAlpha = p * kp * (1 - out); g.beginPath(); g.arc(x - 160, 330 + k * 60, 9, 0, Math.PI * 2); g.fillStyle = C.sky; g.fill(); text(['warden · 17:32 · accepted', 'technician · 17:30 · 0.15 mg/L', 'system · 17:30 · follow-up'][k], x - 135, 340 + k * 60, { size: 24, weight: 500, fam: 'Mono', color: C.light }); } g.globalAlpha = p * (1 - out); }
+    text(a, x, 640, { size: 56, weight: 700, align: 'center' }); text(b, x, 712, { size: 56, weight: 400, fam: 'Serif', align: 'center', color: C.light });
+    g.restore();
+  });
+  if (t > 7.2) {
+    const lt = t - 7.2;
+    rise('DHARA never claims the water is safe.', W / 2, 330, lt - 0.1, { size: 72, weight: 650, align: 'center' });
+    const sp = spring(lt - 1.2, 16, 0.55);
+    if (lt > 1.2) { g.save(); g.translate(W / 2, 560); g.rotate(-0.08); const s = lerp(2.4, 1, clamp(sp)); g.scale(s, s); g.globalAlpha = clamp((lt - 1.2) * 5);
+      rr(-300, -70, 600, 140, 18); g.lineWidth = 8; g.strokeStyle = C.red; g.stroke(); text('SAFE TO DRINK', 0, 26, { size: 70, weight: 800, color: C.red, align: 'center', ls: 6 });
+      const lp = eout(prog(lt, 1.8, 2.3)); g.beginPath(); g.moveTo(-330, 40); g.lineTo(-330 + 660 * lp, -40); g.lineWidth = 10; g.stroke(); g.restore(); }
+    ['What was measured', 'What was done', 'What still needs doing'].forEach((s, k) => { const at = 3.2 + k * 0.9; rise(s, 380 + k * 580, 820, lt - at, { size: 40, weight: 600, align: 'center', color: k === 2 ? C.light : '#fff' }); });
+  }
+  vignette(0.5);
+});
+
+// ===== v2: crisp, fast, card-style scenes keyed to the real voice-over timing (timeline.json) =====
+const NAVY_CARD = '#0E1A30', CARD_LINE = 'rgba(147,197,253,.22)';
+function card(x, y, w, h, { alpha = 1, r = 28, glow = false, fill = NAVY_CARD } = {}) {
+  if (alpha <= 0) return; g.save(); g.globalAlpha *= alpha;
+  g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 50; g.shadowOffsetY = 24; rr(x, y, w, h, r); g.fillStyle = fill; g.fill(); g.shadowColor = 'transparent';
+  rr(x + 0.5, y + 0.5, w - 1, h - 1, r); g.strokeStyle = glow ? 'rgba(59,130,246,.75)' : CARD_LINE; g.lineWidth = glow ? 2.5 : 1.5; g.stroke(); g.restore();
+}
+function pop(t, at, w = 14, z = 0.62) { return clamp(spring(t - at, w, z), 0, 1.08); }
+function softBloom(x, y, r, a, col = '59,130,246') { if (a <= 0) return; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(${col},${a})`); gr.addColorStop(1, `rgba(${col},0)`); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); }
+function navyBg() { bg('#071225', '#03060C'); softBloom(W * 0.5, H * 0.35, 1100, 0.10); }
+function remap(t, pairs) { // piecewise-linear time remap [[newT, oldT], ...]
+  if (t <= pairs[0][0]) return pairs[0][1] + (t - pairs[0][0]);
+  for (let i = 1; i < pairs.length; i++) if (t <= pairs[i][0]) { const [a0, b0] = pairs[i - 1], [a1, b1] = pairs[i]; return lerp(b0, b1, (t - a0) / (a1 - a0)); }
+  const [a, b] = pairs[pairs.length - 1]; return b + (t - a);
+}
+// Natural cursor: quick eased moves along a slight arc, a little overshoot, and constant tiny drift.
+function cursorAt(t, pts, mv = 0.55) { // pts: [[startTime, x, y], ...] (first is the resting start)
+  let x = pts[0][1], y = pts[0][2];
+  for (let i = 1; i < pts.length; i++) {
+    const [ts, tx, ty] = pts[i]; if (t < ts) break;
+    const p = clamp((t - ts) / mv), e = clamp(spring(p * mv * 1.8, 11, 0.78), 0, 1.04);
+    const dx = tx - x, dy = ty - y, arc = Math.sin(Math.PI * clamp(p * 1.2)) * 0.08;
+    const nx = x + dx * e - dy * arc, ny = y + dy * e + dx * arc;
+    if (p >= 1) { x = tx; y = ty; } else { x = nx; y = ny; break; }
+  }
+  return [x + Math.sin(t * 1.7) * 2.2 + Math.sin(t * 3.1) * 1.2, y + Math.cos(t * 1.3) * 1.8 + Math.sin(t * 2.6) * 1.0];
+}
+function focusRing(map, box, a) { // a soft highlight around the element being explained
+  if (!map || a <= 0) return; const [x1, y1] = map(box[0], box[1]), [x2, y2] = map(box[0] + box[2], box[1] + box[3]);
+  g.save(); g.globalAlpha = a; g.shadowColor = 'rgba(8,102,245,.55)'; g.shadowBlur = 24; rr(x1 - 10, y1 - 10, x2 - x1 + 20, y2 - y1 + 20, 18); g.strokeStyle = C.blue; g.lineWidth = 3.5; g.stroke(); g.restore();
+}
+const WIN = { x: 170, y: 70, w: 1580, h: 888 + 44 };
+function shotView(name, cx, cy, z, alpha = 1) {
+  const im = IMG[name]; if (!im) return null; const scale = im.width / 1280, vw = 1280 / z, vh = 720 / z, docH = im.height / scale;
+  const sx = clamp(cx - vw / 2, 0, 1280 - vw) * scale, sy = clamp(cy - vh / 2, 0, Math.max(0, docH - vh)) * scale;
+  g.save(); g.globalAlpha *= alpha; rr(WIN.x, WIN.y + 44, WIN.w, WIN.h - 44, [0, 0, 22, 22]); g.clip();
+  g.fillStyle = '#F7FAFF'; g.fillRect(WIN.x, WIN.y + 44, WIN.w, WIN.h - 44);
+  g.drawImage(im, sx, sy, vw * scale, vh * scale, WIN.x, WIN.y + 44, WIN.w, WIN.h - 44); g.restore();
+  return (px, py) => [WIN.x + (px - sx / scale) * (WIN.w / vw), WIN.y + 44 + (py - sy / scale) * ((WIN.h - 44) / vh)];
+}
+function pillar(kind, name, x, y, lt, p) {
+  g.save(); g.globalAlpha *= clamp(p); g.translate(x, y + (1 - p) * 40);
+  card(-250, 0, 500, 330);
+  if (kind === 'wave') { g.strokeStyle = C.sky; g.lineWidth = 6; g.lineCap = 'round'; g.beginPath(); const n = Math.floor(clamp(lt / 0.8) * 60); for (let k = 0; k <= n; k++) { const xx = -200 + k * 400 / 60, yy = 150 - Math.sin(k * 0.18) * 30 - k * 0.9; k ? g.lineTo(xx, yy) : g.moveTo(xx, yy); } g.stroke(); }
+  if (kind === 'gauge') { g.lineWidth = 22; ['#16A34A', '#94A3B8', C.blue, '#D97706', '#DC2626'].forEach((c, k) => { g.strokeStyle = c; g.globalAlpha = clamp(p) * (k === 4 ? 1 : 0.35); g.beginPath(); g.arc(0, 200, 120, Math.PI + k * Math.PI / 5 + 0.03, Math.PI + (k + 1) * Math.PI / 5 - 0.03); g.stroke(); }); g.globalAlpha = clamp(p);
+    const ang = Math.PI + lerp(0.1, 4.5, clamp(spring(lt - 0.1, 9, 0.6), 0, 1.05)) * Math.PI / 5; g.strokeStyle = '#fff'; g.lineWidth = 6; g.lineCap = 'round'; g.beginPath(); g.moveTo(0, 200); g.lineTo(Math.cos(ang) * 100, 200 + Math.sin(ang) * 100); g.stroke(); g.beginPath(); g.arc(0, 200, 12, 0, Math.PI * 2); g.fillStyle = '#fff'; g.fill(); }
+  if (kind === 'ledger') { for (let k = 0; k < 4; k++) { const rp = eout(prog(lt, k * 0.14, k * 0.14 + 0.35)); if (rp <= 0) continue; g.save(); g.globalAlpha *= rp; rr(-200, 62 + k * 54, 400, 42, 10); g.fillStyle = 'rgba(147,197,253,.12)'; g.fill(); text(['9f2c41ab · photo', 'e07d3c5e · reading', '88a10b6f · review', 'd2e47c19 · follow-up'][k], -180, 91 + k * 54, { size: 20, fam: 'Mono', color: C.light, weight: 400 }); g.restore(); } }
+  text(name, 0, 300, { size: 40, weight: 650, align: 'center' }); g.restore();
+}
+
+function buildScenes() {
+  const T = window.TL, Ls = (n) => T.lines[n][0], Ld = (n) => T.lines[n][1], S = T.scenes;
+  const sc = (i, fn) => scene(S[i][0], S[i][1], (t) => fn(t, (n) => Ls(n) - S[i][0], Ld, S[i][1] - S[i][0]));
+
+  // S1 HOOK: a slit of light opens onto the rooftop tank; a fast push-in under a time-lapse sun.
+  sc(0, (t, L, D, len) => {
+    g.fillStyle = C.ink; g.fillRect(0, 0, W, H);
+    const open = eout5(prog(t, 0.25, 1.15)), slit = eout(prog(t, 0, 0.45));
+    if (open < 1) { g.save(); g.shadowColor = 'rgba(147,197,253,.9)'; g.shadowBlur = 30; const lw = W * slit; rr(W / 2 - lw / 2, H / 2 - 1.5, lw, 3, 2); g.fillStyle = '#EAF3FF'; g.fill(); g.restore(); }
+    const hero = IMG.hero; const hh = H * open;
+    if (hh > 2) {
+      g.save(); rr(0, H / 2 - hh / 2, W, hh, open < 1 ? 6 : 0); g.clip();
+      const whip = ein(prog(t, len - 0.55, len));
+      const z = lerp(1.6, 1.12, eout5(prog(t, 0.25, 1.9))) * lerp(1, 1.18, prog(t, 1.9, len)) * (1 + whip * 0.6);
+      const fx = lerp(0.62, 0.7, prog(t, 0, len)), fy = 0.47, dw = W * z, dh = dw * (hero.height / hero.width);
+      if (whip > 0) g.filter = `blur(${whip * 14}px)`;
+      g.drawImage(hero, W / 2 - fx * dw, H / 2 - fy * dh, dw, dh); g.filter = 'none';
+      const sp = prog(t, 0.8, len), sx = lerp(W * 1.0, W * 0.6, sp), sy = lerp(H * 0.35, -H * 0.05, sp);
+      softBloom(sx, sy, 950, 0.5 * sp, '255,226,180');
+      g.fillStyle = `rgba(255,150,60,${0.14 * eio(sp)})`; g.fillRect(0, 0, W, H);
+      const vg = g.createLinearGradient(0, 0, W * 0.55, 0); vg.addColorStop(0, 'rgba(3,6,12,.72)'); vg.addColorStop(1, 'rgba(3,6,12,0)'); g.fillStyle = vg; g.fillRect(0, 0, W, H);
+      const a = eout(prog(t, 1.0, 1.6)) * (1 - whip);
+      const hour = lerp(9, 16, eio(prog(t, 1.0, len - 0.4))), hh2 = Math.floor(hour), mm = Math.floor((hour - hh2) * 12) * 5;
+      text('ROOFTOP · HOSTEL BLOCK A', 120, 150, { size: 20, weight: 650, color: 'rgba(255,255,255,.75)', ls: 4, alpha: a });
+      text(`${String(hh2).padStart(2, '0')}:${String(mm).padStart(2, '0')}`, 120, 212, { size: 46, weight: 500, fam: 'Mono', alpha: a });
+      const temp = lerp(24, 33, eio(prog(t, 1.2, len - 0.5)));
+      text(temp.toFixed(1), 110, 900, { size: 230, weight: 700, alpha: a, ls: -8 });
+      font(230, 700); g.letterSpacing = '-8px'; const tw = g.measureText(temp.toFixed(1)).width;
+      text('°C', 110 + tw + 16, 806, { size: 84, weight: 600, alpha: a });
+      text('tank water, through the afternoon  ·  illustration', 124, 962, { size: 24, weight: 500, color: 'rgba(255,255,255,.82)', alpha: a });
+      g.restore();
+    }
+  });
+
+  // S2 PROBLEM: chlorine falls below the line as the water heats; the register only says "cleaned".
+  sc(1, (t, L, D, len) => {
+    navyBg();
+    const l2 = L(2), split = l2 + D(2) * 0.43, l3 = L(3), out = ein(prog(t, len - 0.5, len));
+    const exitA = eio(prog(t, split - 0.1, split + 0.45));
+    // phase A: chart cards
+    if (exitA < 1) {
+      g.save(); g.translate(-exitA * 2200, 0); if (exitA > 0) g.filter = `blur(${exitA * 10}px)`;
+      rise('Heat speeds up chlorine loss.', 140, 205, t - 0.15, { size: 76, weight: 700, colors: ['#fff', '#fff', '#fff', C.teal, C.teal] });
+      const pa = pop(t, 0.3), pb = pop(t, 0.45);
+      g.save(); g.globalAlpha = clamp(pa); g.translate(0, (1 - pa) * 40); card(140, 280, 1040, 560);
+      text('FREE CHLORINE · mg/L', 190, 345, { size: 20, weight: 650, color: C.muted, ls: 2 });
+      text('illustration', 1130, 345, { size: 18, weight: 500, color: C.dim, align: 'right' });
+      const cx0 = 190, cx1 = 1130, cy0 = 420, cy1 = 790, yv = (v) => lerp(cy1, cy0, v / 0.7);
+      g.strokeStyle = 'rgba(148,163,184,.12)'; g.lineWidth = 1; for (let k = 0; k <= 4; k++) { const yy = lerp(cy0, cy1, k / 4); g.beginPath(); g.moveTo(cx0, yy); g.lineTo(cx1, yy); g.stroke(); }
+      g.save(); g.setLineDash([10, 8]); g.strokeStyle = 'rgba(239,68,68,.85)'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(cx0, yv(0.2)); g.lineTo(cx1, yv(0.2)); g.stroke(); g.restore();
+      text('minimum 0.2', cx1, yv(0.2) - 14, { size: 20, weight: 600, color: '#FCA5A5', align: 'right' });
+      const dp = eio(prog(t, 0.7, split - 0.4)), cv = (u) => 0.62 * Math.exp(-u * u * 1.6 - u * 0.4);
+      g.save(); g.beginPath(); g.rect(cx0 - 10, cy0 - 40, (cx1 - cx0) * dp + 12, cy1 - cy0 + 80); g.clip();
+      const fillG = g.createLinearGradient(0, cy0, 0, cy1); fillG.addColorStop(0, 'rgba(20,184,166,.28)'); fillG.addColorStop(1, 'rgba(20,184,166,0)');
+      g.beginPath(); for (let k = 0; k <= 100; k++) { const u = k / 100, xx = lerp(cx0, cx1, u), yy = yv(cv(u)); k ? g.lineTo(xx, yy) : g.moveTo(xx, yy); } g.lineTo(cx1, cy1); g.lineTo(cx0, cy1); g.closePath(); g.fillStyle = fillG; g.fill();
+      g.beginPath(); for (let k = 0; k <= 100; k++) { const u = k / 100, xx = lerp(cx0, cx1, u), yy = yv(cv(u)); k ? g.lineTo(xx, yy) : g.moveTo(xx, yy); } g.strokeStyle = C.teal; g.lineWidth = 5; g.lineJoin = 'round'; g.stroke(); g.restore();
+      const cur = cv(dp), below = cur < 0.2, hx = lerp(cx0, cx1, dp), hy = yv(cur);
+      g.beginPath(); g.arc(hx, hy, 9, 0, Math.PI * 2); g.fillStyle = below ? C.red : C.teal; g.fill(); g.beginPath(); g.arc(hx, hy, 18, 0, Math.PI * 2); g.strokeStyle = below ? 'rgba(239,68,68,.45)' : 'rgba(20,184,166,.45)'; g.lineWidth = 3; g.stroke();
+      text(cur.toFixed(2), 1130, 450, { size: 96, weight: 700, color: below ? '#F87171' : '#fff', align: 'right', alpha: clamp(dp * 4) });
+      g.restore();
+      g.save(); g.globalAlpha = clamp(pb); g.translate(0, (1 - pb) * 40); card(1220, 280, 560, 560);
+      text('TANK WATER · °C', 1270, 345, { size: 20, weight: 650, color: C.muted, ls: 2 });
+      const tp = eio(prog(t, 0.7, split - 0.4)), temp = lerp(24, 33, tp);
+      text(temp.toFixed(1), 1270, 520, { size: 130, weight: 700, color: lerp(0, 1, tp) > 0.6 ? '#FDBA74' : '#fff' });
+      rr(1270, 600, 460, 18, 9); g.fillStyle = 'rgba(148,163,184,.15)'; g.fill();
+      const bar = g.createLinearGradient(1270, 0, 1730, 0); bar.addColorStop(0, '#FBBF24'); bar.addColorStop(1, '#F97316'); rr(1270, 600, Math.max(18, 460 * tp), 18, 9); g.fillStyle = bar; g.fill();
+      text('As the water warms, chlorine fades faster.', 1270, 690, { size: 24, weight: 500, color: C.muted });
+      text('Water Research, 2024 review', 1270, 790, { size: 20, weight: 500, color: C.dim });
+      g.restore();
+      g.restore();
+    }
+    // phase B: the register
+    if (t > split) {
+      const rp = pop(t, split + 0.15, 12, 0.7), up = eio(prog(t, l3 - 0.2, l3 + 0.5));
+      const cx = W / 2, cy = lerp(500, 230, up), s = lerp(1, 0.82, up);
+      g.save(); g.globalAlpha = clamp(rp) * (1 - out); g.translate(cx + (1 - clamp(rp)) * 300, cy); g.scale(s, s);
+      card(-520, -150, 1040, 300);
+      text('MAINTENANCE REGISTER · TANK A', -460, -78, { size: 20, weight: 650, color: C.muted, ls: 2 });
+      rr(-460, -40, 920, 120, 18); g.fillStyle = 'rgba(255,255,255,.04)'; g.fill();
+      text('12 March', -420, 32, { size: 40, weight: 650 }); text('Drained and scrubbed', -190, 32, { size: 36, weight: 500, color: '#CBD5E1' });
+      const cp = pop(t, l2 + D(2) - 0.85, 18, 0.5);
+      if (cp > 0) { g.save(); g.translate(330, 20); g.scale(lerp(1.8, 1, clamp(cp)), lerp(1.8, 1, clamp(cp))); g.globalAlpha *= clamp(cp * 1.5); rr(-95, -34, 190, 68, 34); g.fillStyle = 'rgba(22,163,74,.22)'; g.fill(); g.strokeStyle = '#22C55E'; g.lineWidth = 2.5; g.stroke(); text('✓ Cleaned', 0, 12, { size: 30, weight: 700, color: '#4ADE80', align: 'center' }); g.restore(); }
+      g.restore();
+    }
+    // phase C: four questions it can't answer
+    const Q = [['How warm is the water?', 0.0, C.heat], ['Is any chlorine left?', 0.26, C.teal], ['Who checked the work?', 0.5, C.light], ['What did the lab find?', 0.73, '#C4B5FD']];
+    Q.forEach(([q, f, col], i) => {
+      const at = l3 + D(3) * f; if (t < at) return; const p = pop(t, at, 15, 0.66);
+      const x = W / 2 + (i % 2 ? 20 : -800), y = 440 + Math.floor(i / 2) * 190;
+      g.save(); g.globalAlpha = clamp(p) * (1 - out); g.translate(x + 390, y + 75); g.scale(lerp(0.9, 1, clamp(p)), lerp(0.9, 1, clamp(p))); g.translate(-390, -75);
+      card(0, 0, 780, 150, { glow: t < at + 0.6 });
+      g.beginPath(); g.arc(80, 75, 30, 0, Math.PI * 2); g.fillStyle = col + '2A'; g.fill(); text('?', 80, 90, { size: 40, weight: 800, color: col, align: 'center' });
+      text(q, 140, 90, { size: 44, weight: 650 }); g.restore();
+    });
+    if (out > 0) { g.fillStyle = `rgba(3,6,12,${out})`; g.fillRect(0, 0, W, H); }
+  });
+
+  // S3 DHARA: a clean reveal, then what it does in three cards.
+  sc(2, (t, L, D, len) => {
+    navyBg();
+    const cx = W / 2, l5 = L(5), up = eio(prog(t, l5 - 0.35, l5 + 0.35));
+    softBloom(cx, lerp(430, 230, up), 700, 0.28 * eout(prog(t, 0, 0.8)));
+    const lp = clamp(spring(t - 0.1, 10, 0.62), 0, 1.06);
+    g.save(); const bl = (1 - clamp(prog(t, 0.1, 0.6))) * 16; if (bl > 0.3) g.filter = `blur(${bl}px)`;
+    logo(cx, lerp(400, 200, up), lerp(0, 210, lp) * lerp(1, 0.55, up)); g.restore();
+    rise('DHARA', cx, lerp(700, 390, up), t - 0.35, { size: lerp(160, 86, up), weight: 700, align: 'center', ls: lerp(-4, 3, up), stagger: 0.04 });
+    if (up < 1) rise('Water deserves more than a record.', cx, 820, t - 1.0, { size: 64, weight: 400, fam: 'Serif', align: 'center', color: C.light, stagger: 0.05 });
+    [['wave', 'Measure', 0.02], ['gauge', 'Prioritise', 0.36], ['ledger', 'Record', 0.66]].forEach(([k, n, f], i) => {
+      const at = l5 + D(5) * f; if (t < at) return; pillar(k, n, 330 + i * 630, 520, t - at, pop(t, at, 13, 0.7));
+    });
+  });
+
+  // S4 ARCHITECTURE (kept): re-timed to the faster voice.
+  sc(3, (t, L, D) => { const k = D(6) / 17.2; OLD.arch(remap(t, [[L(6), 0.6], [L(6) + D(6), 0.6 + 17.2]])); });
+
+  // S5 LIVE PROOF (kept): re-timed; the split lands on "everything after it is real AWS".
+  sc(4, (t, L, D) => OLD.proof(remap(t, [[L(7), 0.6], [L(7) + D(7), 12.36], [L(8), 13.0], [L(8) + D(8), 24.1]])));
+
+  // S6 PRODUCT: real app screens, a quick human cursor, gentle camera, soft focus rings.
+  sc(5, (t, L, D, len) => {
+    bg('#EAF3FF', '#D7E6FA');
+    const a9 = L(9), a10 = L(10), a11 = L(11), a12 = L(12), a13 = L(13);
+    let name, title, cam, curPts, ring = null, press = 0, clickT = -9, boxA = null, focusA = 0;
+    if (t < a10 - 0.1) {
+      name = 'w1_dashboard'; title = 'dhara · overview'; cam = track(t, [[0, [640, 360, 1]], [a9 + 1.2, [640, 440, 1.1]], [a10, [640, 450, 1.12]]]);
+      curPts = [[0, 1180, 700], [a9 + 0.1, 900, 640], [a9 + 0.9, 852, 566], [a9 + 2.6, 520, 566], [a9 + 3.6, 860, 566]];
+      boxA = [316, 410, 840, 400]; focusA = eout(prog(t, a9 + 1.0, a9 + 1.5));
+    } else if (t < a11 - 0.1) {
+      const lt = t - a10; clickT = a10 + 0.55;
+      if (t < clickT + 0.12) { name = 'w1_dashboard'; title = 'dhara · overview'; cam = [640, 450, 1.12]; }
+      else { name = 'w2_priority'; title = 'dhara · test priority'; cam = track(t, [[clickT, [640, 360, 1]], [clickT + 1.0, [620, 340, 1.18]], [a11, [620, 345, 1.2]]]); boxA = [316, 270, 580, 145]; focusA = eout(prog(t, clickT + 0.8, clickT + 1.3)); }
+      curPts = [[0, 860, 566], [a10, 128, 297], [clickT + 0.5, 370, 301], [clickT + 1.6, 420, 360], [clickT + 2.6, 860, 372], [clickT + 3.6, 520, 395]];
+      press = t > clickT && t < clickT + 0.14 ? 1 : 0;
+    } else if (t < a12 - 0.1) {
+      const lt = t - a11, typeT = a11 + 0.9;
+      if (lt < D(11) * 0.62) {
+        title = 'dhara · record measurement'; const k = clamp(Math.floor((t - typeT) / 0.13) + 1, 0, 4); name = t < typeT ? 't2_form0' : ['t2_form0', 't2_type1', 't2_type2', 't2_type3', 't2_type4'][k];
+        cam = track(t, [[a11, [640, 360, 1]], [a11 + 0.6, [560, 400, 1.18]]]); clickT = a11 + 0.62; press = t > clickT && t < clickT + 0.14 ? 1 : 0;
+        curPts = [[0, 520, 395], [a11, 470, 427]]; boxA = [327, 395, 606, 64]; focusA = eout(prog(t, a11 + 0.6, a11 + 1.0));
+      } else {
+        title = 'dhara · tank A'; name = 'w3_tank'; const s0 = a11 + D(11) * 0.62; cam = track(t, [[s0, [640, 400, 1.05]], [s0 + 0.8, [680, 470, 1.18]]]);
+        curPts = [[0, 470, 427], [s0, 470, 427], [s0 + 0.3, 760, 520]]; boxA = [612, 470, 280, 105]; focusA = eout(prog(t, s0 + 0.4, s0 + 0.9));
+      }
+    } else if (t < a13 - 0.15) {
+      const sw = a12 + D(12) * 0.6;
+      if (t < sw) { name = 'w4_event'; title = 'dhara · maintenance event'; cam = track(t, [[a12, [640, 360, 1.02]], [a12 + 1.6, [640, 600, 1.12]]]); curPts = [[0, 760, 520], [a12 + 0.2, 900, 330], [a12 + 1.5, 620, 610], [a12 + 3.2, 860, 612]]; boxA = [320, 575, 572, 74]; focusA = eout(prog(t, a12 + 1.6, a12 + 2.1)); }
+      else { name = 'w35_queue'; title = 'dhara · review queue'; cam = track(t, [[sw, [640, 360, 1.05]], [sw + 0.8, [600, 300, 1.18]]]); curPts = [[0, 860, 612], [sw, 300, 160], [sw + 0.7, 880, 160]]; boxA = [290, 100, 590, 56]; focusA = eout(prog(t, sw + 0.4, sw + 0.8)); }
+    }
+    const phoneIn = t >= a13 - 0.15, fade = 1 - eio(prog(t, a13 - 0.15, a13 + 0.4));
+    if (fade > 0 && name) {
+      g.save(); g.globalAlpha = fade; g.translate(W / 2, H / 2); const s = lerp(1, 0.92, 1 - fade); g.scale(s, s); g.translate(-W / 2, -H / 2);
+      windowFrame(WIN.x, WIN.y, WIN.w, WIN.h, { title });
+      const map = shotView(name, cam[0], cam[1], cam[2]);
+      if (map && boxA) focusRing(map, boxA, focusA);
+      if (map && curPts) { const [px, py] = cursorAt(t, curPts); const [cx, cy] = map(px, py); clickRing(cx, cy, prog(t, clickT, clickT + 0.5)); cursor(cx, cy, press); }
+      g.restore();
+    }
+    if (phoneIn) {
+      const lt = t - a13 + 0.15, p = clamp(spring(lt, 10, 0.75), 0, 1.04), pw = 420, ph = 880, px = 560, py = lerp(H + 60, 100, p);
+      g.save(); g.shadowColor = 'rgba(15,23,42,.35)'; g.shadowBlur = 70; g.shadowOffsetY = 30; rr(px - 16, py - 16, pw + 32, ph + 32, 64); g.fillStyle = '#0B1222'; g.fill(); g.restore();
+      const im = IMG.p1_public; if (im) { g.save(); rr(px, py, pw, ph, 50); g.clip(); const scl = pw / im.width, scroll = track(lt, [[0, 0], [1.2, 0], [D(13), 330]]); g.drawImage(im, px, py - scroll, pw, im.height * scl); g.restore(); }
+      rise('Scan the QR. See the status.', 1100, 520, lt - 0.4, { size: 50, weight: 700, color: '#0F172A' });
+      text('No login. No private details.', 1100, 585, { size: 30, weight: 500, color: '#475569', alpha: clamp((lt - 0.9) * 2) });
+    }
+    const caps = [[a9 + 0.2, 'Every tank at a glance'], [a10 + 0.3, 'Testing priority, with every reason shown'], [a11 + 0.2, 'A technician records free chlorine: 0.15 mg/L'], [a12 + 0.2, 'Evidence, fingerprinted with SHA-256'], [a12 + D(12) * 0.6, 'Submitters can never approve their own work']];
+    let cap = null; caps.forEach(([at, s]) => { if (t >= at && t < a13 - 0.15) cap = [at, s]; });
+    if (cap) { const a = eout(prog(t, cap[0], cap[0] + 0.35)); font(30, 650); const w = g.measureText(cap[1]).width + 64; g.save(); g.globalAlpha = a; rr(W / 2 - w / 2, 975 + (1 - a) * 16, w, 62, 31); g.fillStyle = '#0F172A'; g.fill(); text(cap[1], W / 2, 1016 + (1 - a) * 16, { size: 30, weight: 600, align: 'center' }); g.restore(); }
+  });
+
+  // S7 IMPACT (kept): re-timed.
+  sc(6, (t, L, D) => OLD.impact(remap(t, [[L(14), 0.8], [L(14) + D(14), 6.8], [L(15), 7.4], [L(15) + D(15), 14.56]])));
+
+  // S8 OUTRO: a clean, confident close.
+  sc(7, (t, L, D, len) => {
+    navyBg(); const cx = W / 2;
+    softBloom(cx, 400, 800, 0.32 * eout(prog(t, 0, 1)));
+    const lp = clamp(spring(t - 0.1, 10, 0.62), 0, 1.06); g.save(); const bl = (1 - clamp(prog(t, 0.1, 0.6))) * 16; if (bl > 0.3) g.filter = `blur(${bl}px)`; logo(cx, 360, lerp(0, 150, lp)); g.restore();
+    rise('DHARA', cx, 610, t - 0.4, { size: 124, weight: 700, align: 'center', stagger: 0.04 });
+    rise('Water deserves more than a record.', cx, 712, t - 1.0, { size: 60, weight: 400, fam: 'Serif', align: 'center', color: C.light, stagger: 0.05 });
+    const fa = eout(prog(t, 2.0, 2.6));
+    text('AWS IoT Core  ·  Amazon EC2  ·  Amazon S3', cx, 850, { size: 28, weight: 600, align: 'center', color: C.muted, alpha: fa, ls: 2 });
+    text('github.com/Aaditya1273/dhara', cx, 902, { size: 28, weight: 500, fam: 'Mono', align: 'center', color: C.light, alpha: fa });
+    if (t > len - 0.9) { g.fillStyle = `rgba(0,0,0,${prog(t, len - 0.9, len)})`; g.fillRect(0, 0, W, H); }
+  });
+  window.DURATION = T.total;
+}
+
+window.seek = (T) => {
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.filter = 'none'; g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  for (const s of SCENES) if (T >= s.a && T < s.b) { g.save(); s.fn(T - s.a); g.restore(); }
+};
+</script></body></html>
