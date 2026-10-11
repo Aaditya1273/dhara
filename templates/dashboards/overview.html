@@ -24,7 +24,7 @@
 </section>
 
 <div class="grid gap-6 xl:grid-cols-3 items-start">
-  <div class="grid gap-6 xl:col-span-2">
+  <div class="grid gap-6 xl:col-span-2 min-w-0">
     <section class="panel" aria-labelledby="prio-h">
       <div class="panel-head"><div><h2 id="prio-h">Measure or review next</h2><p>Ranked by your thresholds, reading age and weather. Each reason is shown.</p></div>
         <a class="btn btn-ghost btn-sm" href="{% url 'qr_app:test_priority' company.slug %}">All priorities</a></div>
@@ -79,7 +79,7 @@
     </section>
   </div>
 
-  <div class="grid gap-6">
+  <div class="grid gap-6 min-w-0">
     <section class="panel" aria-labelledby="mine-h">
       <div class="panel-head"><h2 id="mine-h">Assigned to you</h2></div>
       {% if my_tasks %}

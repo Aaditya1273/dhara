@@ -1,11 +1,9 @@
 {% extends 'base.html' %}
-{% block title %}Page not found{% endblock %}
+{% block title %}This page doesn't exist{% endblock %}
 {% block content %}
-<div class="max-w-lg mx-auto card card-pad text-center">
-  <p class="eyebrow">Error 404</p>
-  <h1 class="text-2xl font-bold my-2">Page not found</h1>
-  <p class="muted">This page does not exist, or the record belongs to another institution.</p>
-  {% if error_id %}<p class="mono mt-4">Reference: {{ error_id }}</p>{% endif %}
-  <a class="btn btn-ghost mt-6" href="/">Go to start</a>
-</div>
+<p class="context" style="color:var(--tide)">Error 404</p>
+<h1 class="text-3xl mt-1" style="font-stretch:110%">This page doesn't exist</h1>
+<p class="muted mt-3">The link may be mistyped, or the record belongs to another institution.</p>
+{% if error_id %}<p class="mono mt-4">Reference: {{ error_id }}</p>{% endif %}
+<a class="btn btn-secondary mt-6" href="/">Go to the start page</a>
 {% endblock %}

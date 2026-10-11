@@ -448,6 +448,11 @@ class TankObservation(models.Model):
     photo_sha256 = models.CharField(max_length=64, blank=True)
 
     @property
+    def just_recorded(self):
+        """Entered in the last two minutes; used only to highlight a new row once."""
+        return self.recorded_at and timezone.now() - self.recorded_at < timedelta(minutes=2)
+
+    @property
     def source(self):
         return self.device.thing_name if self.device_id else (self.entered_by.email if self.entered_by_id else '')
 

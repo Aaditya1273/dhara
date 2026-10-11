@@ -1,15 +1,12 @@
 {% extends 'base.html' %}
 {% block title %}Choose institution{% endblock %}
 {% block content %}
-<div class="max-w-lg mx-auto">
-  <h1 class="text-2xl font-bold mb-4">Choose an institution</h1>
-  <div class="grid gap-3">
-    {% for m in memberships %}
-      <a href="{% url 'qr_app:dashboard' m.company.slug %}" class="card card-pad flex justify-between items-center no-underline text-inherit hover:border-teal-600">
-        <span class="font-semibold" style="color:var(--ink)">{{ m.company.name }}</span>
-        <span class="badge badge-neutral">{{ m.get_role_display }}</span>
-      </a>
-    {% endfor %}
-  </div>
-</div>
+<h1 class="text-3xl" style="font-stretch:110%">Choose an institution</h1>
+<p class="muted mt-2 mb-6">You are a member of more than one. Your role can differ in each.</p>
+<ul class="grid gap-3">
+  {% for m in memberships %}
+  <li><a href="{% url 'qr_app:dashboard' m.company.slug %}" class="panel panel-pad flex justify-between items-center gap-3" style="text-decoration:none;color:var(--ink)">
+    <span class="font-semibold">{{ m.company.name }}</span><span class="badge badge-neutral">{{ m.get_role_display }}</span></a></li>
+  {% endfor %}
+</ul>
 {% endblock %}

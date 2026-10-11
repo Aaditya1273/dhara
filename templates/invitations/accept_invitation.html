@@ -1,12 +1,10 @@
 {% extends 'base.html' %}
 {% block title %}Accept invitation{% endblock %}
 {% block content %}
-<div class="max-w-md mx-auto card card-pad">
-  <h1 class="text-2xl font-bold mb-1">Join {{ company.name }}</h1>
-  <p class="muted mb-6 text-sm">Create a password for <strong>{{ email }}</strong>.</p>
-  <form method="post" data-once>{% csrf_token %}
-    {% include 'partials/form_fields.html' %}
-    <button class="btn btn-primary w-full" type="submit">Create account and join</button>
-  </form>
-</div>
+<h1 class="text-3xl" style="font-stretch:110%">Join {{ company.name }}</h1>
+<p class="muted mt-2 mb-6">Create a password for <strong>{{ email }}</strong>.</p>
+<form method="post" class="panel panel-pad" data-once data-pending="Creating account">{% csrf_token %}
+  {% include 'partials/form_fields.html' %}
+  <button class="btn btn-primary w-full" type="submit">Create account and join</button>
+</form>
 {% endblock %}

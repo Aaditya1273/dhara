@@ -1,24 +1,25 @@
 {% extends 'base.html' %}
-{% block title %}Activity history{% endblock %}
+{% block title %}Activity{% endblock %}
 {% block content %}
-<h1 class="text-3xl font-bold mb-1">Activity history</h1>
-<p class="muted mb-6 text-sm">Every registration, submission, evidence upload, review and follow-up, with the acting user and server time. This is an ordinary database log kept without edit or delete screens; it is not a tamper-proof ledger.</p>
-<div class="card overflow-x-auto">
+<header class="page-head"><div><h1>Activity</h1>
+  <p class="lede">Every registration, measurement, submission, upload, review and follow-up, with the acting person and server time. An ordinary database log kept without edit or delete screens. Not a tamper-proof ledger.</p></div></header>
+<section class="panel">
   {% if events %}
-  <table class="table">
+  <div class="table-wrap"><table class="table stack">
     <thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead>
     <tbody>{% for a in events %}
-      <tr><td class="whitespace-nowrap">{{ a.created_at|date:"d M Y, H:i:s" }}</td><td>{{ a.actor.email|default:"Schedule rule" }}</td><td>{{ a.summary }}<div class="text-xs muted mono">{{ a.action }}</div></td>
-        <td>{% if a.details.sha256 %}<span class="mono">SHA-256 {{ a.details.sha256 }}</span>{% elif a.details.notes %}<span class="text-xs">{{ a.details.notes }}</span>{% elif a.details.note %}<span class="text-xs">{{ a.details.note }}</span>{% endif %}</td></tr>
-    {% endfor %}</tbody>
-  </table>
-  {% else %}<div class="empty"><strong>No activity yet</strong></div>{% endif %}
-</div>
+      <tr><td data-label="When" class="whitespace-nowrap">{{ a.created_at|date:"d M Y, H:i:s" }}</td>
+        <td data-label="Who" class="break-all">{{ a.actor.email|default:"Schedule rule or probe" }}</td>
+        <td data-label="What">{{ a.summary }}<div class="text-xs muted mono">{{ a.action }}</div></td>
+        <td data-label="Details">{% if a.details.sha256 %}<span class="mono">SHA-256 {{ a.details.sha256 }}</span>{% elif a.details.notes %}<span class="text-xs">{{ a.details.notes }}</span>{% elif a.details.note %}<span class="text-xs">{{ a.details.note }}</span>{% elif a.details.reasons %}<span class="text-xs">{{ a.details.reasons.0 }}</span>{% endif %}</td></tr>
+    {% endfor %}</tbody></table></div>
+  {% else %}<div class="empty"><strong>No activity yet</strong><p>Actions appear here as soon as anyone in your institution records something.</p></div>{% endif %}
+</section>
 {% if is_paginated %}
-<nav class="flex justify-between mt-4" aria-label="Pagination">
-  {% if page_obj.has_previous %}<a class="btn btn-ghost" href="?page={{ page_obj.previous_page_number }}">← Newer</a>{% else %}<span></span>{% endif %}
-  <span class="muted text-sm self-center">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-  {% if page_obj.has_next %}<a class="btn btn-ghost" href="?page={{ page_obj.next_page_number }}">Older →</a>{% else %}<span></span>{% endif %}
+<nav class="flex justify-between items-center mt-4" aria-label="Pagination">
+  {% if page_obj.has_previous %}<a class="btn btn-ghost btn-sm" href="?page={{ page_obj.previous_page_number }}">Newer</a>{% else %}<span></span>{% endif %}
+  <span class="muted text-sm">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+  {% if page_obj.has_next %}<a class="btn btn-ghost btn-sm" href="?page={{ page_obj.next_page_number }}">Older</a>{% else %}<span></span>{% endif %}
 </nav>
 {% endif %}
 {% endblock %}

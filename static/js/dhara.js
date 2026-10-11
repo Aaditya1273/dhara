@@ -80,7 +80,8 @@
       wrap.className = 'upload-progress';
       wrap.innerHTML = '<label class="label" for="up-bar">Uploading files</label><progress id="up-bar" max="100" value="0"></progress>' +
                        '<p class="help" aria-live="polite"></p>';
-      form.querySelector('.form-actions').insertAdjacentElement('beforebegin', wrap);
+      var actions = form.querySelector('.form-actions');
+      if (actions) actions.insertAdjacentElement('beforebegin', wrap); else form.appendChild(wrap);
       var bar = wrap.querySelector('progress'), note = wrap.querySelector('p');
       var xhr = new XMLHttpRequest();
       xhr.open(form.method || 'POST', form.action || window.location.href);

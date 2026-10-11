@@ -1,47 +1,50 @@
 {% extends 'base.html' %}{% load dhara %}
 {% block title %}Follow-ups{% endblock %}
 {% block content %}
-<h1 class="text-3xl font-bold mb-1">Follow-up tasks</h1>
-<p class="muted text-sm mb-4">Created by your configured schedule (maintenance overdue, report missing) or by a reviewer requesting changes. A person records every resolution.</p>
-<nav class="flex gap-2 mb-6" aria-label="Filter">
-  <a class="btn {% if show == 'open' %}btn-primary{% else %}btn-ghost{% endif %}" href="?show=open">Open</a>
-  <a class="btn {% if show == 'mine' %}btn-primary{% else %}btn-ghost{% endif %}" href="?show=mine">Assigned to me</a>
-  <a class="btn {% if show == 'resolved' %}btn-primary{% else %}btn-ghost{% endif %}" href="?show=resolved">Resolved</a>
+<header class="page-head"><div><h1>Follow-ups</h1>
+  <p class="lede">Opened by your configured schedule and test-priority rules, or by a reviewer asking for changes. Nothing closes itself: a person records every resolution.</p></div></header>
+<nav class="demo-tabs" aria-label="Filter follow-ups">
+  <a class="btn btn-sm {% if show == 'open' %}btn-secondary{% else %}btn-ghost{% endif %}" href="?show=open" {% if show == 'open' %}aria-current="page"{% endif %}>Open</a>
+  <a class="btn btn-sm {% if show == 'mine' %}btn-secondary{% else %}btn-ghost{% endif %}" href="?show=mine" {% if show == 'mine' %}aria-current="page"{% endif %}>Assigned to me</a>
+  <a class="btn btn-sm {% if show == 'resolved' %}btn-secondary{% else %}btn-ghost{% endif %}" href="?show=resolved" {% if show == 'resolved' %}aria-current="page"{% endif %}>Resolved</a>
 </nav>
 <div class="grid gap-4">
 {% for t in tasks %}
-  <article class="card card-pad">
-    <div class="flex flex-col sm:flex-row justify-between gap-3">
-      <div>
-        <p class="eyebrow">{{ t.get_kind_display }} · <a href="{% url 'qr_app:tank_detail' company.slug t.equipment_id %}">{{ t.equipment.tank_code }}</a></p>
-        <h2 class="font-semibold mt-1">{{ t.title }}</h2>
-        <p class="text-sm muted mt-1">Due {{ t.due_date|date:"d M Y" }}{% if t.is_overdue %} · <span style="color:var(--bad)">past due</span>{% endif %} · assigned to {{ t.assigned_to.email|default:"nobody" }}{% if not t.created_by_id %} · created by schedule rule{% endif %}</p>
+  <article class="panel">
+    <div class="panel-head">
+      <div class="min-w-0">
+        <p class="context">{{ t.get_kind_display }}, <a href="{% url 'qr_app:tank_detail' company.slug t.equipment_id %}">{{ t.equipment.tank_code }}</a></p>
+        <h2 class="text-lg">{{ t.title }}</h2>
+        <p>Due {{ t.due_date|date:"d M Y" }}{% if t.is_overdue %}, <strong style="color:var(--bad)">past due</strong>{% endif %}. Assigned to {{ t.assigned_to.email|default:"nobody" }}.{% if not t.created_by_id %} Opened by a schedule rule.{% endif %}</p>
         {% if t.related_event_id %}<a class="text-sm" href="{% url 'qr_app:event_detail' company.slug t.related_event_id %}">Related event #{{ t.related_event_id }}</a>{% endif %}
       </div>
-      <div>{% badge 'task' t.status %}</div>
+      {% badge 'task' t.status %}
     </div>
     {% if t.status == 'resolved' %}
-      <p class="text-sm mt-3 border-l-4 pl-3" style="border-color:var(--line)">{{ t.resolution_notes }}<span class="block text-xs muted">{{ t.resolved_by.email }} · {{ t.resolved_at|date:"d M Y, H:i" }}</span></p>
+      <div class="px-5 sm:px-8 pb-5"><blockquote class="text-sm border-l-4 pl-3" style="border-color:var(--good)">{{ t.resolution_notes }}<span class="block text-xs muted mt-1">{{ t.resolved_by.email }}, {{ t.resolved_at|date:"d M Y, H:i" }}</span></blockquote></div>
     {% else %}
-      <div class="grid md:grid-cols-2 gap-4 mt-4 border-t pt-4" style="border-color:var(--line)">
+      <div class="grid md:grid-cols-2 gap-6 px-5 sm:px-8 pb-6 pt-4 border-t" style="border-color:var(--line)">
         {% if t.assign_form %}
-        <form method="post" action="{% url 'qr_app:followup_assign' company.slug t.pk %}" class="grid sm:grid-cols-2 gap-x-3 items-end" data-once>{% csrf_token %}
-          {% include 'partials/field.html' with field=t.assign_form.assigned_to %}
-          {% include 'partials/field.html' with field=t.assign_form.due_date %}
-          <button class="btn btn-ghost sm:col-span-2" type="submit">Update assignment</button>
+        <form method="post" action="{% url 'qr_app:followup_assign' company.slug t.pk %}" data-once data-pending="Updating assignment">{% csrf_token %}
+          <div class="grid sm:grid-cols-2 gap-x-3">
+            {% include 'partials/field.html' with field=t.assign_form.assigned_to %}
+            {% include 'partials/field.html' with field=t.assign_form.due_date %}
+          </div>
+          <button class="btn btn-ghost btn-sm" type="submit">Update assignment</button>
         </form>
         {% endif %}
         {% if membership.is_admin or t.assigned_to_id == user.pk %}
-        <form method="post" action="{% url 'qr_app:followup_resolve' company.slug t.pk %}" data-once>{% csrf_token %}
-          <div class="field"><label for="res-{{ t.pk }}">Resolution notes</label><textarea id="res-{{ t.pk }}" name="notes" rows="2" required placeholder="What was done, with a reference to the event or report"></textarea></div>
-          <button class="btn btn-teal" type="submit">Mark resolved</button>
+        <form method="post" action="{% url 'qr_app:followup_resolve' company.slug t.pk %}" data-once data-pending="Resolving follow-up">{% csrf_token %}
+          <div class="field"><label for="res-{{ t.pk }}">Resolution notes <span class="req" aria-hidden="true">*</span></label>
+            <textarea id="res-{{ t.pk }}" name="notes" rows="2" required placeholder="What was done, with a reference to the measurement, event or report"></textarea></div>
+          <button class="btn btn-secondary btn-sm" type="submit">Mark resolved</button>
         </form>
         {% endif %}
       </div>
     {% endif %}
   </article>
 {% empty %}
-  <div class="card empty"><strong>{% if show == 'resolved' %}No resolved tasks yet{% elif show == 'mine' %}Nothing is assigned to you{% else %}No open follow-ups{% endif %}</strong>Tasks appear when a tank's configured schedule is not met or a reviewer requests changes.</div>
+  <div class="panel empty"><strong>{% if show == 'resolved' %}No resolved follow-ups yet{% elif show == 'mine' %}Nothing is assigned to you{% else %}No open follow-ups{% endif %}</strong><p>Follow-ups appear when a schedule or test-priority rule is not met, or a reviewer asks for changes.</p></div>
 {% endfor %}
 </div>
 {% endblock %}

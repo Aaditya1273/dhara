@@ -1,13 +1,14 @@
 {% extends 'base.html' %}
-{% block title %}Log intervention · {{ tank.tank_code }}{% endblock %}
+{% block title %}Log intervention, {{ tank.tank_code }}{% endblock %}
 {% block content %}
-<div class="max-w-xl mx-auto">
-  <a href="{% url 'qr_app:tank_detail' company.slug tank.pk %}" class="text-sm">← {{ tank.tank_code }}</a>
-  <h1 class="text-3xl font-bold mt-2">Log a cooling intervention</h1>
-  <p class="muted mb-4">Record the physical change and when it was completed. DHARA estimates its effect only from measured temperatures before and after, with a confidence interval; it never assumes an effect.</p>
-  <form method="post" class="card card-pad" data-once>{% csrf_token %}
+<div class="max-w-2xl">
+  <a class="back-link" href="{% url 'qr_app:tank_detail' company.slug tank.pk %}">{{ tank.tank_code }}</a>
+  <header class="page-head"><div><h1>Log a cooling intervention</h1>
+    <p class="lede">Record the physical change and when it was finished. DHARA estimates its effect only from measured temperatures before and after, with a confidence interval. It never assumes an effect.</p></div></header>
+  <form method="post" class="panel panel-pad" data-once data-pending="Saving intervention">{% csrf_token %}
     {% include 'partials/form_fields.html' %}
-    <button class="btn btn-primary" type="submit">Save intervention</button>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Save intervention</button>
+      <a class="btn btn-ghost" href="{% url 'qr_app:tank_detail' company.slug tank.pk %}">Cancel</a></div>
   </form>
 </div>
 {% endblock %}

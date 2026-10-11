@@ -68,7 +68,7 @@ a { color: var(--river); text-decoration-thickness: 1px; text-underline-offset: 
 a:hover { color: var(--tide); }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: var(--r-xs); }
 .on-dark { --focus: var(--signal); color: #e6eeec; }
-.on-dark a { color: var(--signal); }
+.on-dark a:not([class]) { color: var(--signal); }
 ::selection { background: var(--signal); color: var(--signal-ink); }
 .tnum, .stat, .table td, dd { font-variant-numeric: tabular-nums; }
 .mono, code { font-family: var(--font-mono); font-size: .8em; overflow-wrap: anywhere; }
@@ -212,7 +212,10 @@ a:hover { color: var(--tide); }
 .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 /* Stacked rows on small screens: each cell shows its header via data-label. */
 @media (max-width: 639px) {
+  .table.stack, .table.stack tbody { display: block; width: 100%; }
   .table.stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .table.stack .badge { white-space: normal; }
+  .table.stack .whitespace-nowrap { white-space: normal; }
   .table.stack tr { display: block; border-bottom: 1px solid var(--border); padding: var(--s2) 0; }
   .table.stack td { display: grid; grid-template-columns: 8.5rem 1fr; gap: var(--s3); border: 0; padding: var(--s2) var(--s4); }
   .table.stack td::before { content: attr(data-label); color: var(--muted); font-size: var(--fs-xs); font-weight: 600; }
@@ -235,7 +238,7 @@ a:hover { color: var(--tide); }
 .metric-strip { display: grid; grid-template-columns: repeat(2, 1fr); }
 @media (min-width: 1024px) { .metric-strip { grid-template-columns: repeat(5, 1fr); } .metric:last-child { border-right: 0; } }
 @media (max-width: 1023px) { .metric { border-bottom: 1px solid var(--border); } .metric:nth-child(2n) { border-right: 0; } }
-.timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+.timeline { list-style: none; margin: 0; position: relative; }
 .timeline li { position: relative; padding: 0 0 var(--s4) var(--s5); }
 .timeline li::before { content: ''; position: absolute; left: 5px; top: .45rem; bottom: -.2rem; width: 1px; background: var(--line-strong); }
 .timeline li:last-child::before { display: none; }
@@ -314,6 +317,8 @@ a:hover { color: var(--tide); }
 @media (min-width: 640px) { .app-main { padding: var(--s7) var(--s6) var(--s8); } }
 @media (min-width: 1280px) { .app-main { padding: var(--s7) var(--s7) var(--s8); } }
 .app-main > .inner { max-width: var(--container); margin: 0 auto; }
+/* Grid items default to min-width:auto, so a wide table would stretch its column. Tables scroll inside .table-wrap instead. */
+.app-main .grid > *, .site-main .grid > *, .signal-grid > *, .ledger > *, .flow > *, .fragments > *, .hero-inner > * { min-width: 0; }
 .messages { display: grid; gap: var(--s2); margin-bottom: var(--s5); }
 .messages .notice { animation: settle var(--d-panel) var(--ease-flow); }
 
@@ -422,7 +427,7 @@ a:hover { color: var(--tide); }
 @keyframes settle { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes drop { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 @keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
-@keyframes surface { from { opacity: .25; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes surface { from { transform: translateY(16px); } to { transform: none; } }
 @keyframes drift { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(-3%, 2%, 0) scale(1.04); } }
 @keyframes drift2 { from { transform: translate3d(0, 0, 0) rotate(0deg); } to { transform: translate3d(2%, -2%, 0) rotate(-2deg); } }
 @keyframes fresh { from { background-color: rgba(201, 242, 122, .55); } to { background-color: transparent; } }

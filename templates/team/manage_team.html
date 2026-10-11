@@ -1,38 +1,37 @@
 {% extends 'base.html' %}
 {% block title %}Team{% endblock %}
 {% block content %}
-<h1 class="text-3xl font-bold mb-1">Team</h1>
-<p class="muted text-sm mb-6">Roles apply to this institution only. Wardens review maintenance and link reports; technicians submit maintenance and evidence.</p>
-<div class="grid lg:grid-cols-3 gap-6">
-  <section class="lg:col-span-2 card overflow-x-auto">
-    <table class="table">
-      <thead><tr><th>Member</th><th>Role</th><th>Joined</th><th></th></tr></thead>
+<header class="page-head"><div><h1>Team</h1>
+  <p class="lede">Roles apply to this institution only. Wardens review maintenance and link lab reports; technicians record measurements and maintenance.</p></div></header>
+<div class="grid gap-6 xl:grid-cols-3 items-start">
+  <section class="panel xl:col-span-2" aria-labelledby="mem-h">
+    <div class="panel-head"><h2 id="mem-h">Members</h2></div>
+    <div class="table-wrap"><table class="table stack">
+      <thead><tr><th>Member</th><th>Role</th><th>Joined</th><th><span class="sr-only">Action</span></th></tr></thead>
       <tbody>{% for m in memberships %}
-        <tr><td>{{ m.user.email }}{% if m.user_id == user.pk %} <span class="badge badge-neutral">you</span>{% endif %}</td><td>{{ m.get_role_display }}</td><td>{{ m.date_joined|date:"d M Y" }}</td>
-          <td class="text-right">{% if m.user_id != user.pk %}<a class="text-sm" href="{% url 'qr_app:member_delete' company.slug m.user_id %}">Remove</a>{% endif %}</td></tr>
-      {% endfor %}</tbody>
-    </table>
+        <tr><td data-label="Member" class="break-all">{{ m.user.email }}{% if m.user_id == user.pk %} <span class="badge badge-neutral">you</span>{% endif %}</td>
+          <td data-label="Role">{{ m.get_role_display }}</td><td data-label="Joined">{{ m.date_joined|date:"d M Y" }}</td>
+          <td data-label="" class="num">{% if m.user_id != user.pk %}<a class="btn btn-ghost btn-sm" href="{% url 'qr_app:member_delete' company.slug m.user_id %}">Remove</a>{% endif %}</td></tr>
+      {% endfor %}</tbody></table></div>
   </section>
-  <section class="card card-pad content-start">
-    <h2 class="font-bold mb-3">Invite someone</h2>
-    <form method="post" data-once>{% csrf_token %}
+  <section class="panel panel-pad" aria-labelledby="inv-h">
+    <h2 id="inv-h" class="text-lg mb-4">Invite someone</h2>
+    <form method="post" data-once data-pending="Creating invitation">{% csrf_token %}
       {% include 'partials/form_fields.html' %}
       <button class="btn btn-primary w-full" type="submit">Create invitation link</button>
     </form>
   </section>
 </div>
 {% if invitations %}
-<section class="card card-pad mt-6">
-  <h2 class="font-bold mb-3">Pending invitations</h2>
-  <p class="text-xs muted mb-3">DHARA does not send email. Share each link with the invitee directly; links expire after 7 days.</p>
-  <div class="grid gap-3">{% for inv in invitations %}
-    <div class="grid sm:grid-cols-[1fr_auto] gap-2 items-center border-b pb-3 last:border-0" style="border-color:var(--line)">
-      <div><p class="text-sm font-semibold">{{ inv.email }} · {{ inv.get_role_display }}</p>
-        <label class="sr-only" for="inv-{{ inv.pk }}">Invitation link</label>
-        <input id="inv-{{ inv.pk }}" class="mono w-full p-1 border rounded bg-slate-50" readonly value="{{ request.scheme }}://{{ request.get_host }}{% url 'accept_invitation' inv.token %}" onclick="this.select()"></div>
-      <form method="post" action="{% url 'qr_app:invitation_revoke' company.slug inv.pk %}">{% csrf_token %}<button class="btn btn-ghost" type="submit">Revoke</button></form>
-    </div>
-  {% endfor %}</div>
+<section class="panel panel-pad mt-6" aria-labelledby="pend-h">
+  <h2 id="pend-h" class="text-lg">Pending invitations</h2>
+  <p class="text-sm muted mt-1 mb-4">DHARA does not send email. Share each link with the invitee directly. Links expire after 7 days.</p>
+  <ul class="grid gap-4">{% for inv in invitations %}
+    <li class="grid sm:grid-cols-[1fr_auto] gap-3 items-end">
+      <div class="field mb-0"><label for="inv-{{ inv.pk }}">{{ inv.email }}, {{ inv.get_role_display }}</label>
+        <input id="inv-{{ inv.pk }}" type="text" class="mono" readonly value="{{ request.scheme }}://{{ request.get_host }}{% url 'accept_invitation' inv.token %}" onclick="this.select()"></div>
+      <form method="post" action="{% url 'qr_app:invitation_revoke' company.slug inv.pk %}">{% csrf_token %}<button class="btn btn-ghost btn-sm" type="submit">Revoke</button></form>
+    </li>{% endfor %}</ul>
 </section>
 {% endif %}
 {% endblock %}

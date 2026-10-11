@@ -1,11 +1,9 @@
 {% extends 'base.html' %}
-{% block title %}Something went wrong{% endblock %}
+{% block title %}DHARA hit an error{% endblock %}
 {% block content %}
-<div class="max-w-lg mx-auto card card-pad text-center">
-  <p class="eyebrow">Error 500</p>
-  <h1 class="text-2xl font-bold my-2">Something went wrong</h1>
-  <p class="muted">The error has been logged. Please try again.</p>
-  {% if error_id %}<p class="mono mt-4">Reference: {{ error_id }}</p>{% endif %}
-  <a class="btn btn-ghost mt-6" href="/">Go to start</a>
-</div>
+<p class="context" style="color:var(--tide)">Error 500</p>
+<h1 class="text-3xl mt-1" style="font-stretch:110%">DHARA hit an error</h1>
+<p class="muted mt-3">The error has been logged with the reference below. Nothing you submitted in this request was saved. Try again in a moment.</p>
+{% if error_id %}<p class="mono mt-4">Reference: {{ error_id }}</p>{% endif %}
+<a class="btn btn-secondary mt-6" href="/">Go to the start page</a>
 {% endblock %}

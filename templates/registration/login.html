@@ -1,14 +1,12 @@
 {% extends 'base.html' %}
 {% block title %}Sign in{% endblock %}
 {% block content %}
-<div class="max-w-md mx-auto card card-pad">
-  <h1 class="text-2xl font-bold mb-1">Sign in</h1>
-  <p class="muted mb-6 text-sm">Wardens, administrators and technicians of a registered institution.</p>
-  <form method="post" data-once>{% csrf_token %}
-    {% include 'partials/form_fields.html' %}
-    <input type="hidden" name="next" value="{{ next }}">
-    <button class="btn btn-primary w-full" type="submit">Sign in</button>
-  </form>
-  <p class="text-sm muted mt-6">New institution? <a href="{% url 'register' %}">Register here</a>.</p>
-</div>
+<h1 class="text-3xl" style="font-stretch:110%">Sign in</h1>
+<p class="muted mt-2 mb-6">For wardens, administrators and technicians of a registered institution. Anyone can open a tank's QR page without signing in.</p>
+<form method="post" class="panel panel-pad" data-once data-pending="Signing in">{% csrf_token %}
+  {% include 'partials/form_fields.html' %}
+  <input type="hidden" name="next" value="{{ next }}">
+  <button class="btn btn-primary w-full" type="submit">Sign in</button>
+</form>
+<p class="text-sm muted mt-6">New institution? <a href="{% url 'register' %}">Register here</a>.</p>
 {% endblock %}

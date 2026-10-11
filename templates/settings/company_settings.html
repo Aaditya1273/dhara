@@ -1,13 +1,14 @@
 {% extends 'base.html' %}
 {% block title %}Settings{% endblock %}
 {% block content %}
-<div class="max-w-xl mx-auto">
-  <h1 class="text-3xl font-bold mb-6">Institution settings</h1>
-  <form method="post" class="card card-pad" data-once>{% csrf_token %}
+<div class="max-w-2xl">
+  <header class="page-head"><div><h1>Institution settings</h1>
+    <p class="lede">The institution name appears on public QR pages. The campus location is used only to fetch the weather forecast.</p></div></header>
+  <form method="post" class="panel panel-pad" data-once data-pending="Saving settings">{% csrf_token %}
     {% include 'partials/form_fields.html' %}
-    <p class="text-xs muted mb-4">The institution name appears on public QR pages. The web address (<span class="mono">/{{ company.slug }}/</span>) does not change.</p>
-    <button class="btn btn-primary" type="submit">Save</button>
+    <p class="text-xs muted mb-4">The web address <span class="mono">/{{ company.slug }}/</span> does not change.</p>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Save settings</button></div>
   </form>
-  {% if billing_enabled %}<p class="mt-4 text-sm"><a href="{% url 'qr_app:subscription_manage' company.slug %}">Subscription (upstream billing) →</a></p>{% endif %}
+  {% if billing_enabled %}<p class="mt-4 text-sm"><a href="{% url 'qr_app:subscription_manage' company.slug %}">Subscription (upstream billing)</a></p>{% endif %}
 </div>
 {% endblock %}

@@ -1,35 +1,39 @@
 {% extends 'base.html' %}
 {% block title %}{% if tank %}Edit {{ tank.tank_code }}{% else %}Register tank{% endif %}{% endblock %}
 {% block content %}
-<div class="max-w-2xl mx-auto">
-  <a href="{% if tank %}{% url 'qr_app:tank_detail' company.slug tank.pk %}{% else %}{% url 'qr_app:tank_list' company.slug %}{% endif %}" class="text-sm">← Back</a>
-  <h1 class="text-3xl font-bold mt-2 mb-6">{% if tank %}Edit {{ tank.tank_code }}{% else %}Register a tank{% endif %}</h1>
-  <form method="post" class="card card-pad" data-once>{% csrf_token %}
-    <div class="grid sm:grid-cols-2 gap-x-4">
-      {% include 'partials/field.html' with field=form.tank_code %}
-      {% include 'partials/field.html' with field=form.name %}
-      {% include 'partials/field.html' with field=form.building %}
-      {% include 'partials/field.html' with field=form.capacity_litres %}
-    </div>
-    {% include 'partials/field.html' with field=form.location %}
-    {% include 'partials/field.html' with field=form.responsible %}
-    <fieldset class="border-t pt-4 mt-2" style="border-color:var(--line)">
-      <legend class="eyebrow mb-2">Schedule policy</legend>
-      <div class="grid sm:grid-cols-2 gap-x-4">
+<div class="max-w-3xl">
+  <a class="back-link" href="{% if tank %}{% url 'qr_app:tank_detail' company.slug tank.pk %}{% else %}{% url 'qr_app:tank_list' company.slug %}{% endif %}">{% if tank %}{{ tank.tank_code }}{% else %}Tank registry{% endif %}</a>
+  <header class="page-head"><div><h1>{% if tank %}Edit {{ tank.tank_code }}{% else %}Register a tank{% endif %}</h1>
+    <p class="lede">{% if tank %}Changes are recorded in the activity log.{% else %}Registering creates the tank's QR code and its public status page.{% endif %}</p></div></header>
+  <form method="post" class="panel panel-pad" data-once data-pending="Saving tank">{% csrf_token %}
+    {% for e in form.non_field_errors %}<div class="notice notice-error mb-4" role="alert">{{ e }}</div>{% endfor %}
+    <fieldset><legend class="form-section-title">Identity</legend>
+      <div class="grid sm:grid-cols-2 gap-x-5 mt-3">
+        {% include 'partials/field.html' with field=form.tank_code %}
+        {% include 'partials/field.html' with field=form.name %}
+        {% include 'partials/field.html' with field=form.building %}
+        {% include 'partials/field.html' with field=form.capacity_litres %}
+      </div>
+      {% include 'partials/field.html' with field=form.location %}
+      {% include 'partials/field.html' with field=form.responsible %}
+    </fieldset>
+    <fieldset class="form-section"><legend class="form-section-title">Schedule policy</legend>
+      <p class="text-sm muted mb-3">Your institution's own intervals. DHARA does not assume a legal standard.</p>
+      <div class="grid sm:grid-cols-2 gap-x-5">
         {% include 'partials/field.html' with field=form.maintenance_interval_days %}
         {% include 'partials/field.html' with field=form.report_interval_days %}
       </div>
     </fieldset>
-    <fieldset class="border-t pt-4 mt-2" style="border-color:var(--line)">
-      <legend class="eyebrow mb-2">Thermal profile</legend>
-      <p class="text-xs muted mb-3">Used only as context for test prioritisation (e.g. a rooftop tank in full sun). It is not used to estimate water temperature.</p>
-      <div class="grid sm:grid-cols-3 gap-x-4">
+    <fieldset class="form-section"><legend class="form-section-title">Thermal profile</legend>
+      <p class="text-sm muted mb-3">Context for test priority, for example a rooftop tank in full sun. It is never used to estimate water temperature.</p>
+      <div class="grid sm:grid-cols-3 gap-x-5">
         {% include 'partials/field.html' with field=form.placement %}
         {% include 'partials/field.html' with field=form.shade %}
         {% include 'partials/field.html' with field=form.material %}
       </div>
     </fieldset>
-    <button class="btn btn-primary" type="submit">{% if tank %}Save changes{% else %}Register tank and create QR{% endif %}</button>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">{% if tank %}Save changes{% else %}Register tank and create QR code{% endif %}</button>
+      <a class="btn btn-ghost" href="{% if tank %}{% url 'qr_app:tank_detail' company.slug tank.pk %}{% else %}{% url 'qr_app:tank_list' company.slug %}{% endif %}">Cancel</a></div>
   </form>
 </div>
 {% endblock %}

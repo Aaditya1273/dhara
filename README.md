@@ -74,6 +74,27 @@ There is no blended "safety score". A missing report is shown as **"No water-qua
 | 🔜 | Live S3 + RDS deployment on AWS (code and instructions ready; not yet run against a real account) |
 | 🔜 | Email/SMS reminders, Hindi UI translation, CSV/PDF audit export, S3 Object Lock retention |
 
+## Interface and design system
+
+**DHARA Fluid Infrastructure.** One source of truth: `static/css/style.css`. It holds tokens, components, the two shells, the landing styles, motion and reduced-motion rules.
+
+| Layer | What it is |
+|---|---|
+| Colour | Abyss `#091D25`, River `#164B4C`, Tide `#2E7D79`, Signal `#C9F27A` (only for the primary action and the current-page marker), Mist `#EEF2EE`, Heat `#9A5A10`. Semantic good/warn/bad/info. Chart series water `#008C82`, air `#B8640C` and chlorine `#2266A0` passed a palette validator (lightness, chroma, colour-blind and normal-vision separation, contrast) |
+| Type | Anek Latin, a variable font with width and weight axes from the Indian foundry Ek Type, for display; expanded widths on the landing page and normal width in the app. IBM Plex Sans for UI with tabular numerals. IBM Plex Mono only for tank IDs and SHA-256 digests. All self-hosted under SIL OFL; Anek is subset to the characters used |
+| Status | Every badge carries a distinct glyph shape (circle, triangle, diamond, ring, bar) as well as colour, so meaning never depends on colour alone |
+| Evidence lanes | Field measurements (heat), maintenance (tide) and water quality (info) have separate coloured lanes, so they are never visually merged |
+| Motion | Tokens `--ease-flow` (signature), `--ease-ui` and `--ease-exit`, with 140 to 640 ms durations. One landing entrance sequence. Native scroll-driven reveals that are movement-only and never hide text. Cross-page View Transitions. Real upload progress from the browser's upload events. Everything is disabled under `prefers-reduced-motion` |
+| Charts | Server-rendered SVG with no chart library. Single series per chart, never a second y-axis. Observed values are solid, forecasts dashed with an approximate band, air temperature dotted. Points have hover and keyboard tooltips, and every chart has a data-table view. Charts appear only from two real readings; otherwise an empty state says what is needed |
+
+**Build:** Tailwind utilities are compiled to `static/css/tw.css` with `npm install && npm run build:css`, and the output is committed, so Node is not needed at runtime. The previous Tailwind CDN dev runtime and Alpine.js were removed. Behaviour lives in `static/js/dhara.js`, about 150 lines of progressive enhancement: every form works without it.
+
+**Measured, 2026-10-11, Lighthouse 12** (simulated mobile, local dev server):
+- landing: performance 98, accessibility 100, best practices 100, LCP 2.3 s, CLS 0;
+- public QR page: 100 / 100 / 100, LCP 1.8 s.
+
+**Responsive check:** 17 pages at 360, 390 and 768 px with no element wider than the viewport, plus a 5-width pass (including 1366 and 1440) with no console errors.
+
 ## Thermal twin
 
 **Model.** For each hour *k*: `T[k+1] − T[k] = a·G[k] + b·(Tair[k] − T[k]) + c`.
@@ -348,7 +369,7 @@ See `.env.example`. Variables read by the app:
 ```bash
 python manage.py makemigrations --check   # no pending model changes
 python manage.py migrate
-python manage.py test qr_app              # 82 tests; LiveS3Tests skipped without a bucket
+python manage.py test qr_app              # 87 tests; LiveS3Tests skipped without a bucket
 ```
 The suite covers:
 - tank creation and validation, QR token resolution

@@ -1,74 +1,76 @@
 {% extends 'base.html' %}{% load dhara %}
 {% block title %}Event #{{ event.pk }}{% endblock %}
 {% block content %}
-<a href="{% url 'qr_app:tank_detail' company.slug tank.pk %}" class="text-sm">← {{ tank.tank_code }} · {{ tank.name }}</a>
-<div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mt-2 mb-6">
-  <div><p class="eyebrow">Maintenance event #{{ event.pk }}</p><h1 class="text-3xl font-bold">{{ event.get_event_type_display }} · {{ event.work_date|date:"d M Y" }}</h1></div>
+<a class="back-link" href="{% url 'qr_app:tank_detail' company.slug tank.pk %}">{{ tank.tank_code }}, {{ tank.name }}</a>
+<header class="page-head">
+  <div><p class="context">Maintenance event #{{ event.pk }}</p><h1>{{ event.get_event_type_display }}, {{ event.work_date|date:"d M Y" }}</h1></div>
   <div class="flex flex-wrap gap-2">{% badge 'evidence' event.evidence_status %}{% badge 'review' event.review_status %}</div>
-</div>
+</header>
 
-<div class="grid lg:grid-cols-3 gap-6 items-start">
-  <div class="lg:col-span-2 grid gap-6 content-start">
-    <section class="card card-pad">
-      <h2 class="font-bold mb-3">Record</h2>
-      <dl class="grid sm:grid-cols-2 gap-3 text-sm">
-        <div><dt class="muted text-xs">Claimed work date</dt><dd>{{ event.work_date|date:"d M Y" }}</dd></div>
-        <div><dt class="muted text-xs">Submitted (server time)</dt><dd>{{ event.created_at|date:"d M Y, H:i" }}</dd></div>
-        <div><dt class="muted text-xs">Submitted by</dt><dd>{{ event.author.email }}</dd></div>
-        <div><dt class="muted text-xs">Technician / provider</dt><dd>{{ event.provider_name|default:"—" }}</dd></div>
-        {% if event.amends %}<div class="sm:col-span-2"><dt class="muted text-xs">Corrects</dt><dd><a href="{% url 'qr_app:event_detail' company.slug event.amends_id %}">Event #{{ event.amends_id }}</a></dd></div>{% endif %}
-        <div class="sm:col-span-2"><dt class="muted text-xs">Notes</dt><dd>{{ event.notes|default:"—"|linebreaksbr }}</dd></div>
+<div class="grid gap-6 xl:grid-cols-3 items-start">
+  <div class="grid gap-6 xl:col-span-2 min-w-0">
+    <section class="panel lane panel-pad" aria-labelledby="rec-h">
+      <span class="lane-tag">Maintenance evidence</span>
+      <h2 id="rec-h" class="text-lg mt-1 mb-4">Record</h2>
+      <dl class="grid sm:grid-cols-2 gap-4 text-sm">
+        <div><dt class="label">Claimed work date</dt><dd class="mt-1">{{ event.work_date|date:"d M Y" }}</dd></div>
+        <div><dt class="label">Submitted (server time)</dt><dd class="mt-1">{{ event.created_at|date:"d M Y, H:i" }}</dd></div>
+        <div><dt class="label">Submitted by</dt><dd class="mt-1 break-all">{{ event.author.email }}</dd></div>
+        <div><dt class="label">Technician or provider</dt><dd class="mt-1">{{ event.provider_name|default:"Not given" }}</dd></div>
+        {% if event.amends %}<div class="sm:col-span-2"><dt class="label">Corrects</dt><dd class="mt-1"><a href="{% url 'qr_app:event_detail' company.slug event.amends_id %}">Event #{{ event.amends_id }}</a></dd></div>{% endif %}
+        <div class="sm:col-span-2"><dt class="label">Notes</dt><dd class="mt-1">{{ event.notes|default:"None"|linebreaksbr }}</dd></div>
       </dl>
-      {% for a in amendments %}<p class="notice notice-info mt-4 text-sm">Corrected by <a href="{% url 'qr_app:event_detail' company.slug a.pk %}">event #{{ a.pk }}</a> ({{ a.get_review_status_display|lower }}).</p>{% endfor %}
+      {% for a in amendments %}<p class="notice notice-info mt-4">Corrected by <a href="{% url 'qr_app:event_detail' company.slug a.pk %}">event #{{ a.pk }}</a> ({{ a.get_review_status_display|lower }}).</p>{% endfor %}
     </section>
 
-    <section class="card card-pad">
-      <h2 class="font-bold mb-1">Evidence</h2>
-      <p class="text-xs muted mb-4">SHA-256 digests are computed from the bytes received at upload. A match shows the stored file has not changed since; it does not show that a photo is genuine or what it depicts.</p>
+    <section class="panel panel-pad" aria-labelledby="ev-h">
+      <h2 id="ev-h" class="text-lg">Evidence</h2>
+      <p class="text-sm muted mt-1 mb-4">SHA-256 digests are computed from the bytes received at upload. A match shows the stored file has not changed since; it does not show that a photo is genuine or what it depicts.</p>
       {% if evidence %}
       <div class="grid sm:grid-cols-2 gap-4">
         {% for ev in evidence %}
-        <figure class="border rounded-lg overflow-hidden" style="border-color:var(--line)">
+        <figure class="panel overflow-hidden">
           {% if ev.content_type == 'application/pdf' %}
-            <a href="{% url 'qr_app:evidence_file' company.slug ev.pk %}" target="_blank" rel="noopener" class="flex items-center justify-center h-40 bg-slate-50 font-semibold">PDF · open document</a>
+            <a href="{% url 'qr_app:evidence_file' company.slug ev.pk %}" target="_blank" rel="noopener" class="grid place-items-center h-48 font-semibold" style="background:var(--surface-2)">PDF document. Open in a new tab</a>
           {% else %}
-            <a href="{% url 'qr_app:evidence_file' company.slug ev.pk %}" target="_blank" rel="noopener"><img src="{% url 'qr_app:evidence_file' company.slug ev.pk %}" alt="{{ ev.get_kind_display }} for event {{ event.pk }}" class="w-full h-48 object-cover" loading="lazy"></a>
+            <a class="evidence-thumb" style="border:0;border-radius:0" href="{% url 'qr_app:evidence_file' company.slug ev.pk %}" target="_blank" rel="noopener"><img src="{% url 'qr_app:evidence_file' company.slug ev.pk %}" alt="{{ ev.get_kind_display }} for event {{ event.pk }}" loading="lazy"></a>
           {% endif %}
-          <figcaption class="p-3 text-xs grid gap-1">
-            <span class="font-semibold text-sm">{{ ev.get_kind_display }}</span>
-            <span class="muted">{{ ev.original_name }} · {{ ev.size|filesizeformat }} · {{ ev.uploaded_by.email }}, {{ ev.uploaded_at|date:"d M Y H:i" }}</span>
-            <span class="mono">{{ ev.sha256 }}</span>
-            <form method="post" action="{% url 'qr_app:evidence_verify' company.slug ev.pk %}">{% csrf_token %}<button class="underline" type="submit">Re-check digest</button></form>
+          <figcaption class="p-4 grid gap-1 text-xs">
+            <strong class="text-sm">{{ ev.get_kind_display }}</strong>
+            <span class="muted">{{ ev.original_name }}, {{ ev.size|filesizeformat }}</span>
+            <span class="muted">{{ ev.uploaded_by.email }}, {{ ev.uploaded_at|date:"d M Y H:i" }}</span>
+            <span class="mono" title="SHA-256">{{ ev.sha256 }}</span>
+            <form method="post" action="{% url 'qr_app:evidence_verify' company.slug ev.pk %}" data-once data-pending="Re-checking digest">{% csrf_token %}<button class="link-btn text-xs" type="submit">Re-check digest</button></form>
           </figcaption>
         </figure>
         {% endfor %}
       </div>
       {% else %}
-        <div class="empty"><strong>No evidence attached</strong>This event cannot be accepted until evidence is added.</div>
+        <div class="empty"><strong>No evidence attached</strong><p>This event cannot be accepted until evidence is added.</p></div>
       {% endif %}
     </section>
 
-    <section class="card card-pad">
-      <h2 class="font-bold mb-3">History</h2>
-      <ol class="grid gap-3 text-sm">
-        {% for h in history %}<li class="flex gap-3"><span class="mt-1 w-2 h-2 rounded-full shrink-0" style="background:var(--teal-600)"></span><span>{{ h.summary }}{% if h.details.notes %} — “{{ h.details.notes }}”{% endif %}{% if h.details.note %} — “{{ h.details.note }}”{% endif %}<span class="block text-xs muted">{{ h.actor.email|default:"system" }} · {{ h.created_at|date:"d M Y, H:i" }}</span></span></li>{% endfor %}
+    <section class="panel panel-pad" aria-labelledby="hist-h">
+      <h2 id="hist-h" class="text-lg mb-4">History</h2>
+      <ol class="timeline">
+        {% for h in history %}<li><span class="text-sm">{{ h.summary }}{% if h.details.notes %}: "{{ h.details.notes }}"{% endif %}{% if h.details.note %}: "{{ h.details.note }}"{% endif %}</span><span class="when">{{ h.actor.email|default:"System" }}, {{ h.created_at|date:"d M Y, H:i" }}</span></li>{% endfor %}
       </ol>
     </section>
   </div>
 
-  <aside class="grid gap-6 content-start">
-    <section class="card card-pad">
-      <h2 class="font-bold mb-3">Review</h2>
+  <aside class="grid gap-6 min-w-0">
+    <section class="panel panel-pad" aria-labelledby="rev-h">
+      <h2 id="rev-h" class="text-lg">Review</h2>
       {% if event.reviewed_by %}
-        <p class="text-sm">{% badge 'review' event.review_status %}</p>
-        <p class="text-sm mt-2">{{ event.reviewed_by.email }}<span class="block text-xs muted">{{ event.reviewed_at|date:"d M Y, H:i" }}</span></p>
-        {% if event.review_notes %}<blockquote class="mt-3 text-sm border-l-4 pl-3" style="border-color:var(--line)">{{ event.review_notes|linebreaksbr }}</blockquote>{% endif %}
+        <div class="mt-3">{% badge 'review' event.review_status %}</div>
+        <p class="text-sm mt-3 break-all">{{ event.reviewed_by.email }}<span class="block text-xs muted">{{ event.reviewed_at|date:"d M Y, H:i" }}</span></p>
+        {% if event.review_notes %}<blockquote class="mt-3 text-sm border-l-4 pl-3" style="border-color:var(--line-strong)">{{ event.review_notes|linebreaksbr }}</blockquote>{% endif %}
       {% elif event.review_status == 'pending' %}
-        <p class="text-sm muted">Waiting for a warden to review.</p>
+        <p class="text-sm muted mt-2">Waiting for a warden. The decision appears here once the server records it.</p>
       {% endif %}
 
       {% if can_review %}
-        <form method="post" action="{% url 'qr_app:event_review' company.slug event.pk %}" class="mt-4 border-t pt-4" style="border-color:var(--line)" data-once>{% csrf_token %}
+        <form method="post" action="{% url 'qr_app:event_review' company.slug event.pk %}" class="form-section mt-4" data-once data-pending="Recording review decision">{% csrf_token %}
           {% include 'partials/form_fields.html' with form=review_form %}
           <button class="btn btn-primary w-full" type="submit">Record decision</button>
         </form>
@@ -77,10 +79,10 @@
       {% endif %}
 
       {% if can_respond %}
-        <form method="post" enctype="multipart/form-data" action="{% url 'qr_app:event_respond' company.slug event.pk %}" class="mt-4 border-t pt-4" style="border-color:var(--line)" data-once>{% csrf_token %}
-          <p class="text-sm font-semibold mb-2">Respond with more evidence</p>
+        <form method="post" enctype="multipart/form-data" action="{% url 'qr_app:event_respond' company.slug event.pk %}" class="form-section mt-4" data-once data-upload data-pending="Sending response">{% csrf_token %}
+          <p class="form-section-title">Respond with more evidence</p>
           {% include 'partials/form_fields.html' with form=respond_form %}
-          <button class="btn btn-teal w-full" type="submit">Send back for review</button>
+          <div class="form-actions"><button class="btn btn-secondary w-full" type="submit">Send back for review</button></div>
         </form>
       {% endif %}
 

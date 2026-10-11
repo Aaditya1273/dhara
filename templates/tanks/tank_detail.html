@@ -1,169 +1,187 @@
 {% extends 'base.html' %}{% load dhara %}
 {% block title %}{{ tank.tank_code }}{% endblock %}
 {% block content %}
-<a href="{% url 'qr_app:tank_list' company.slug %}" class="text-sm">← Tank registry</a>
-<div class="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mt-2 mb-6">
-  <div>
-    <p class="mono muted">{{ tank.tank_code }}</p>
-    <h1 class="text-3xl font-bold">{{ tank.name }}</h1>
-    <p class="muted">{{ tank.building|default:"No building set" }}{% if tank.location %} · {{ tank.location }}{% endif %}</p>
+<a class="back-link" href="{% url 'qr_app:tank_list' company.slug %}">Tank registry</a>
+<header class="page-head">
+  <div class="min-w-0">
+    <p class="context mono">{{ tank.tank_code }}</p>
+    <h1>{{ tank.name }}</h1>
+    <p class="lede">{{ tank.building|default:"No building set" }}{% if tank.location %}. {{ tank.location }}{% endif %}</p>
     <div class="flex flex-wrap gap-2 mt-3">{% badge 'maintenance' tank.maintenance_status %}{% if tank.report_missing %}<span class="badge badge-warn">Water-quality report missing</span>{% endif %}</div>
   </div>
   <div class="flex flex-wrap gap-2">
-    <a class="btn btn-teal" href="{% url 'qr_app:event_create' company.slug tank.pk %}">Record maintenance</a>
-    <a class="btn btn-ghost" href="{% url 'qr_app:observation_create' company.slug tank.pk %}">Record measurement</a>
-    {% if membership.is_admin %}
-      <a class="btn btn-ghost" href="{% url 'qr_app:report_create' company.slug tank.pk %}">Link water-quality report</a>
-      <a class="btn btn-ghost" href="{% url 'qr_app:tank_update' company.slug tank.pk %}">Edit</a>
-    {% endif %}
+    <a class="btn btn-primary" href="{% url 'qr_app:observation_create' company.slug tank.pk %}">Record measurement</a>
+    <a class="btn btn-secondary" href="{% url 'qr_app:event_create' company.slug tank.pk %}">Record maintenance</a>
+    {% if membership.is_admin %}<a class="btn btn-ghost" href="{% url 'qr_app:report_create' company.slug tank.pk %}">Link lab report</a>
+    <a class="btn btn-ghost" href="{% url 'qr_app:tank_update' company.slug tank.pk %}">Edit</a>{% endif %}
   </div>
-</div>
+</header>
 
-<div class="grid lg:grid-cols-3 gap-6 items-start">
-  <div class="lg:col-span-2 grid gap-6">
-    <section class="card" aria-labelledby="maint-h">
-      <div class="card-pad pb-2"><p class="eyebrow">Maintenance</p><h2 id="maint-h" class="text-lg font-bold">Maintenance events</h2>
-        <p class="text-sm muted">Each event keeps its claimed work date, the server's submission time, its evidence and its review decision separately.</p></div>
-      {% if events %}
-      <div class="overflow-x-auto"><table class="table">
-        <thead><tr><th>Work date</th><th>Type</th><th>Submitted</th><th>Evidence</th><th>Review</th></tr></thead>
-        <tbody>{% for e in events %}
-          <tr>
-            <td><a href="{% url 'qr_app:event_detail' company.slug e.pk %}" class="font-semibold">{{ e.work_date|date:"d M Y" }}</a>{% if e.amends_id %}<div class="text-xs muted">corrects #{{ e.amends_id }}</div>{% endif %}</td>
-            <td>{{ e.get_event_type_display }}</td>
-            <td class="text-xs">{{ e.author.email }}<div class="muted">{{ e.created_at|date:"d M Y, H:i" }}</div></td>
-            <td>{% if e.evidence_count %}<span class="badge badge-good">{{ e.evidence_count }} file{{ e.evidence_count|pluralize }}</span>{% else %}{% badge 'evidence' 'missing' %}{% endif %}</td>
-            <td>{% badge 'review' e.review_status %}</td>
-          </tr>
-        {% endfor %}</tbody></table></div>
-      {% else %}
-        <div class="empty"><strong>No maintenance recorded yet</strong>Use <em>Record maintenance</em> after cleaning, disinfection, inspection or repair.</div>
-      {% endif %}
-    </section>
+<div class="grid gap-6 xl:grid-cols-3 items-start">
+  <div class="grid gap-6 xl:col-span-2 min-w-0">
 
-
-    <section class="card" aria-labelledby="obs-h">
-      <div class="card-pad pb-2"><p class="eyebrow">Field measurements — not laboratory results</p><h2 id="obs-h" class="text-lg font-bold">Water temperature and free chlorine</h2>
-        <p class="text-sm muted">Readings taken at the tank with a thermometer or test kit. A free-chlorine reading shows disinfectant residual at that moment and point; it does not establish that the water is potable.</p>
-        <div class="grid sm:grid-cols-2 gap-3 mt-3">
-          <div class="border rounded-lg p-3" style="border-color:var(--line)"><p class="text-xs muted">Latest free chlorine</p>
-            {% if latest.free_chlorine %}<p class="text-xl font-bold">{{ latest.free_chlorine.value|floatformat:2 }} mg/L</p><p class="text-xs muted">{{ latest.free_chlorine.measured_at|date:"d M Y, H:i" }}</p>{% else %}<p class="text-sm">No reading on record</p>{% endif %}</div>
-          <div class="border rounded-lg p-3" style="border-color:var(--line)"><p class="text-xs muted">Latest tank water temperature</p>
-            {% if latest.water_temp %}<p class="text-xl font-bold">{{ latest.water_temp.value|floatformat:1 }} °C</p><p class="text-xs muted">{{ latest.water_temp.measured_at|date:"d M Y, H:i" }}</p>{% else %}<p class="text-sm">No reading on record</p>{% endif %}</div>
-        </div></div>
+    {# ---- Field measurements ---- #}
+    <section class="panel lane-field" aria-labelledby="obs-h">
+      <div class="panel-head">
+        <div><span class="lane-tag field">Field measurements, not laboratory results</span>
+          <h2 id="obs-h" class="mt-1">Water temperature and free chlorine</h2>
+          <p>Readings taken at this tank. A free-chlorine reading shows the disinfectant residual at that moment and point; it does not establish that the water is potable.</p></div>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-3 px-5 sm:px-8">
+        <div class="inset"><span class="label">Latest tank-water temperature</span>
+          {% if latest.water_temp %}<p class="stat mt-2" style="font-size:2rem">{{ latest.water_temp.value|floatformat:1 }} °C</p><p class="text-xs muted mt-1">measured {{ latest.water_temp.measured_at|date:"d M Y, H:i" }}</p>{% else %}<p class="mt-2 text-sm">No reading on record</p>{% endif %}</div>
+        <div class="inset"><span class="label">Latest free chlorine</span>
+          {% if latest.free_chlorine %}<p class="stat mt-2" style="font-size:2rem">{{ latest.free_chlorine.value|floatformat:2 }} mg/L</p><p class="text-xs muted mt-1">measured {{ latest.free_chlorine.measured_at|date:"d M Y, H:i" }}</p>{% else %}<p class="mt-2 text-sm">No reading on record</p>{% endif %}</div>
+      </div>
+      <div class="grid lg:grid-cols-2 gap-6 px-5 sm:px-8 pt-5">
+        <div><h3 class="text-base">Tank-water temperature, last {{ chart_days }} days</h3>
+          {% if temp_chart %}{% include 'partials/series_chart.html' with c=temp_chart cls='s-water' title='Tank-water temperature' desc='Measured tank-water temperature over the last two weeks' %}
+          {% else %}<p class="text-sm muted mt-2">The chart appears after two temperature readings. Use a thermometer, or register an in-tank probe below.</p>{% endif %}</div>
+        <div><h3 class="text-base">Free chlorine, last {{ chart_days }} days</h3>
+          {% if chlorine_chart %}{% include 'partials/series_chart.html' with c=chlorine_chart cls='s-chlorine' title='Free chlorine' desc='Measured free chlorine over the last two weeks with the configured minimum shown as a dashed line' %}
+          {% else %}<p class="text-sm muted mt-2">The chart appears after two free-chlorine readings, for example from a DPD test strip.</p>{% endif %}</div>
+      </div>
       {% if observations %}
-      <div class="overflow-x-auto"><table class="table">
-        <thead><tr><th>Measured</th><th>Measurement</th><th>Value</th><th>Method</th><th>Entered by</th></tr></thead>
+      <div class="table-wrap mt-5"><table class="table stack">
+        <thead><tr><th>Measured</th><th>Measurement</th><th class="num">Value</th><th>Method</th><th>Source</th></tr></thead>
         <tbody>{% for o in observations %}
-          <tr><td class="whitespace-nowrap">{{ o.measured_at|date:"d M Y, H:i" }}<div class="text-xs muted">entered {{ o.recorded_at|date:"d M H:i" }}</div></td>
-            <td>{{ o.get_kind_display }}{% if o.sample_point %}<div class="text-xs muted">{{ o.sample_point }}</div>{% endif %}</td>
-            <td class="whitespace-nowrap font-semibold">{{ o.value }} {% if o.kind == 'water_temp' %}°C{% else %}mg/L{% endif %}{% if o.entered_unit == '°F' %}<div class="text-xs muted font-normal">entered {{ o.entered_value }} °F</div>{% endif %}</td>
-            <td>{{ o.method|cut:"_"|title }}</td><td class="text-xs">{% if o.device_id %}<span class="badge badge-info">sensor</span> {% endif %}{{ o.source }}{% if o.photo_sha256 %}<div class="mono" title="SHA-256 of the evidence photo">📷 {{ o.photo_sha256|truncatechars:14 }}</div>{% endif %}</td></tr>
+          <tr {% if o.just_recorded %}class="is-fresh"{% endif %}>
+            <td data-label="Measured" class="whitespace-nowrap">{{ o.measured_at|date:"d M Y, H:i" }}<div class="text-xs muted">entered {{ o.recorded_at|date:"d M H:i" }}</div></td>
+            <td data-label="Measurement">{{ o.get_kind_display }}{% if o.sample_point %}<div class="text-xs muted">{{ o.sample_point }}</div>{% endif %}</td>
+            <td data-label="Value" class="num font-semibold whitespace-nowrap">{{ o.value }} {% if o.kind == 'water_temp' %}°C{% else %}mg/L{% endif %}{% if o.entered_unit == '°F' %}<div class="text-xs muted font-normal">entered {{ o.entered_value }} °F</div>{% endif %}</td>
+            <td data-label="Method">{{ o.method|cut:"_"|capfirst }}</td>
+            <td data-label="Source" class="text-xs">{% if o.device_id %}<span class="badge badge-info">probe</span> {% endif %}{{ o.source }}{% if o.photo_sha256 %}<div class="mono muted" title="SHA-256 of the evidence photo">photo {{ o.photo_sha256|truncatechars:15 }}</div>{% endif %}</td></tr>
         {% endfor %}</tbody></table></div>
       {% else %}
-        <div class="empty"><strong>No field measurements yet</strong>Use <em>Record measurement</em> after a DPD chlorine test or a thermometer reading.</div>
+        <div class="empty"><strong>No field measurements yet</strong><p>Record a DPD chlorine test or a thermometer reading. Test priority uses these readings.</p>
+          <a class="btn btn-primary" href="{% url 'qr_app:observation_create' company.slug tank.pk %}">Record measurement</a></div>
       {% endif %}
     </section>
 
-
-    <section class="card" aria-labelledby="twin-h">
-      <div class="card-pad"><p class="eyebrow">Thermal twin — estimate from measured data</p><h2 id="twin-h" class="text-lg font-bold">Tank-water temperature forecast</h2>
-        <p class="text-sm muted">A heat-balance model fitted to this tank's own measured temperatures and the campus weather. It is shown only after it passes a held-out validation, and only up to the horizon it was validated for.</p>
+    {# ---- Thermal twin ---- #}
+    <section class="panel lane-field" aria-labelledby="twin-h">
+      <div class="panel-head"><div><span class="lane-tag field">Model estimate from measured data</span>
+        <h2 id="twin-h" class="mt-1">Tank-water temperature forecast</h2>
+        <p>A heat-balance model fitted to this tank's own temperatures and the campus weather. Shown only after it passes a held-out validation, and only up to the horizon it was validated for.</p></div></div>
+      <div class="px-5 sm:px-8 pb-6">
         {% if twin %}
-          <div class="mt-3 flex flex-wrap gap-2 items-center">
-            {% if twin.ok %}<span class="badge badge-good">Validated</span>{% elif twin.status == 'stale' %}<span class="badge badge-warn">Paused</span>{% else %}<span class="badge badge-neutral">Not validated</span>{% endif %}
+          <div class="flex flex-wrap gap-2 items-center">
+            {% if twin.ok %}<span class="badge badge-good">Validated on held-out data</span>{% elif twin.status == 'stale' %}<span class="badge badge-warn">Paused</span>{% else %}<span class="badge badge-neutral">Not validated</span>{% endif %}
             <span class="text-sm">{{ twin.message }}</span>
           </div>
-          {% if twin.params %}<p class="text-xs muted mt-2 mono">a={{ twin.params.0|floatformat:3 }} °C per kWh/m² · b={{ twin.params.1|floatformat:3 }} /h · c={{ twin.params.2|floatformat:3 }} °C/h · trained on {{ twin.n_train }} h, held out {{ twin.n_holdout }} h{% if twin.holdout_rmse %} · RMSE {{ twin.holdout_rmse|floatformat:2 }} °C{% endif %}{% if twin.air_range %} · calibrated air {{ twin.air_range.0|floatformat:0 }}–{{ twin.air_range.1|floatformat:0 }} °C{% endif %}</p>{% endif %}
+          {% if twin.params %}<p class="text-xs muted mt-2 mono">a={{ twin.params.0|floatformat:3 }} °C per kWh/m², b={{ twin.params.1|floatformat:3 }}/h, c={{ twin.params.2|floatformat:3 }} °C/h; trained {{ twin.n_train }} h, held out {{ twin.n_holdout }} h{% if twin.holdout_rmse %}, RMSE {{ twin.holdout_rmse|floatformat:2 }} °C{% endif %}{% if twin.air_range %}, calibrated air {{ twin.air_range.0|floatformat:0 }} to {{ twin.air_range.1|floatformat:0 }} °C{% endif %}</p>{% endif %}
           {% if chart %}
           <figure class="mt-4">
-            <svg viewBox="0 0 {{ chart.w }} {{ chart.h }}" class="w-full h-auto" role="img" aria-label="Measured tank-water temperature for the last 48 hours and the validated forecast with its approximate uncertainty band">
-              <line x1="{{ chart.pad }}" y1="{{ chart.y_lo }}" x2="{{ chart.w }}" y2="{{ chart.y_lo }}" stroke="#d9dcd7"/>
-              <text x="2" y="{{ chart.y_lo }}" font-size="10" fill="#5b6672">{{ chart.lo }}°</text>
-              <text x="2" y="{{ chart.y_hi }}" font-size="10" fill="#5b6672">{{ chart.hi }}°</text>
-              <polygon points="{{ chart.band }}" fill="#129694" fill-opacity="0.15"/>
-              <line x1="{{ chart.now_x }}" y1="{{ chart.y_hi }}" x2="{{ chart.now_x }}" y2="{{ chart.y_lo }}" stroke="#5b6672" stroke-dasharray="3 3"/>
-              <polyline points="{{ chart.measured }}" fill="none" stroke="#144b6e" stroke-width="2"/>
-              <polyline points="{{ chart.forecast }}" fill="none" stroke="#0e7c7b" stroke-width="2" stroke-dasharray="6 4"/>
+            <svg viewBox="0 0 {{ chart.w }} {{ chart.h }}" class="chart" role="img" aria-label="Measured tank-water temperature for the last 48 hours and the validated forecast with its approximate uncertainty band">
+              <line class="axis" x1="{{ chart.pad }}" y1="{{ chart.y_lo }}" x2="{{ chart.w }}" y2="{{ chart.y_lo }}"/>
+              <text x="2" y="{{ chart.y_lo }}">{{ chart.lo }}°</text><text x="2" y="{{ chart.y_hi }}">{{ chart.hi }}°</text>
+              <polygon class="s-band" points="{{ chart.band }}"/>
+              <line class="now" x1="{{ chart.now_x }}" y1="{{ chart.y_hi }}" x2="{{ chart.now_x }}" y2="{{ chart.y_lo }}"/>
+              <polyline class="s-water" points="{{ chart.measured }}"/>
+              <polyline class="s-forecast" points="{{ chart.forecast }}"/>
             </svg>
-            <figcaption class="text-xs muted flex flex-wrap gap-4 mt-1"><span><b style="color:#144b6e">━</b> measured (hourly mean)</span><span><b style="color:#0e7c7b">┅</b> forecast</span><span>shaded: ±1.96 × held-out RMSE (approximate)</span></figcaption>
+            <figcaption class="legend"><span><i class="water"></i>measured (hourly mean)</span><span><i class="forecast"></i>forecast</span><span><i class="errband"></i>±1.96 × held-out RMSE (approximate)</span></figcaption>
           </figure>
-          {% with peak=twin.forecast_max_in_range %}{% if peak %}<p class="text-sm mt-2">Forecast peak within calibrated range: <strong>{{ peak.0|floatformat:1 }} °C</strong> at {{ peak.1|date:"D H:i" }}.</p>{% endif %}{% endwith %}
-          {% if twin.any_extrapolated %}<p class="text-xs" style="color:var(--warn)">Some forecast hours have weather outside the calibrated range; they are excluded from the peak.</p>{% endif %}
+          {% with peak=twin.forecast_max_in_range %}{% if peak %}<p class="text-sm mt-3">Forecast peak within the calibrated range: <strong>{{ peak.0|floatformat:1 }} °C</strong> at {{ peak.1|date:"D H:i" }}.</p>{% endif %}{% endwith %}
+          {% if twin.any_extrapolated %}<p class="text-xs mt-1" style="color:var(--warn)">Some forecast hours have weather outside the calibrated range; they are left out of the peak.</p>{% endif %}
           {% endif %}
         {% else %}
-          <p class="text-sm mt-3">{{ twin_note }}</p>
+          <p class="text-sm">{{ twin_note }} The forecast needs about three days of hourly readings from an in-tank probe.</p>
         {% endif %}
-        <div class="flex flex-wrap gap-2 mt-4">
-          {% if membership.is_admin %}<a class="btn btn-ghost" href="{% url 'qr_app:sensor_create' company.slug tank.pk %}">Register temperature sensor</a>
-          <a class="btn btn-ghost" href="{% url 'qr_app:intervention_create' company.slug tank.pk %}">Log cooling intervention</a>{% endif %}
-        </div>
-        {% if sensors %}<p class="text-xs muted mt-3">Sensors: {% for d in sensors %}<span class="mono">{{ d.thing_name }}</span> ({% if d.last_seen_at %}last data {{ d.last_seen_at|timesince }} ago{% else %}no data yet{% endif %}){% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+        {% if sensors %}<p class="text-xs muted mt-3">Probes: {% for d in sensors %}<span class="mono">{{ d.thing_name }}</span> ({% if d.last_seen_at %}last data {{ d.last_seen_at|timesince }} ago{% else %}no data yet{% endif %}){% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+        {% if membership.is_admin %}<div class="flex flex-wrap gap-2 mt-4">
+          <a class="btn btn-ghost btn-sm" href="{% url 'qr_app:sensor_create' company.slug tank.pk %}">Register temperature probe</a>
+          <a class="btn btn-ghost btn-sm" href="{% url 'qr_app:intervention_create' company.slug tank.pk %}">Log cooling intervention</a></div>{% endif %}
       </div>
       {% if effects %}
       <div class="border-t" style="border-color:var(--line)">
-        <div class="card-pad pb-2"><h3 class="font-bold">Cooling interventions — measured effect</h3>
-          <p class="text-xs muted">Measured daily peak after the change, compared with what the pre-change model predicts for the same weather. Assumes nothing else changed (refill schedule, water use, sensor position).</p></div>
-        <table class="table"><tbody>{% for iv, ef in effects %}
-          <tr><td>{{ iv.get_kind_display }}<div class="text-xs muted">{{ iv.applied_at|date:"d M Y H:i" }}{% if iv.notes %} · {{ iv.notes }}{% endif %}</div></td>
-            <td class="text-sm">{% if ef.status == 'ok' %}<strong>{{ ef.mean_c|floatformat:1 }} °C</strong> daily peak vs predicted (95% CI {{ ef.ci.0|floatformat:1 }} to {{ ef.ci.1|floatformat:1 }}, {{ ef.days }} days) · {{ ef.degree_hours_avoided|floatformat:0 }} degree-hours above 30 °C avoided{% if ef.ci.1 >= 0 %}<div class="text-xs muted">The interval includes zero: no clear effect yet.</div>{% endif %}{% else %}<span class="muted">{{ ef.message }}</span>{% endif %}</td></tr>
-        {% endfor %}</tbody></table>
+        <div class="panel-head"><div><h3 class="text-lg">Cooling interventions: measured effect</h3>
+          <p>Measured daily peak after the change, compared with what the pre-change model predicts for the same weather. Assumes nothing else changed: refill schedule, water use, probe position.</p></div></div>
+        <div class="table-wrap"><table class="table stack"><thead><tr><th>Change</th><th>Measured effect</th></tr></thead><tbody>{% for iv, ef in effects %}
+          <tr><td data-label="Change">{{ iv.get_kind_display }}<div class="text-xs muted">{{ iv.applied_at|date:"d M Y H:i" }}{% if iv.notes %}. {{ iv.notes }}{% endif %}</div></td>
+            <td data-label="Effect" class="text-sm">{% if ef.status == 'ok' %}<strong>{{ ef.mean_c|floatformat:1 }} °C</strong> daily peak versus prediction (95% interval {{ ef.ci.0|floatformat:1 }} to {{ ef.ci.1|floatformat:1 }}, {{ ef.days }} days), {{ ef.degree_hours_avoided|floatformat:0 }} degree-hours above 30 °C avoided{% if ef.ci.0 <= 0 and ef.ci.1 >= 0 %}<div class="text-xs muted">The interval includes zero: no clear effect yet.</div>{% endif %}{% else %}<span class="muted">{{ ef.message }}</span>{% endif %}</td></tr>
+        {% endfor %}</tbody></table></div>
       </div>
       {% endif %}
     </section>
 
-    <section class="card" aria-labelledby="wq-h">
-      <div class="card-pad pb-2"><p class="eyebrow">Water quality — separate from maintenance</p><h2 id="wq-h" class="text-lg font-bold">Laboratory reports</h2>
-        <p class="text-sm muted">A report applies only to the sample, date and parameters it lists. Accepting maintenance does not change this section, and this section does not change maintenance status.</p></div>
-      {% if reports %}
-      <div class="overflow-x-auto"><table class="table">
-        <thead><tr><th>Sample date</th><th>Laboratory</th><th>Parameters / results as reported</th><th>Status</th></tr></thead>
-        <tbody>{% for r in reports %}
+    {# ---- Maintenance ---- #}
+    <section class="panel lane" aria-labelledby="maint-h">
+      <div class="panel-head"><div><span class="lane-tag">Maintenance evidence</span>
+        <h2 id="maint-h" class="mt-1">Maintenance events</h2>
+        <p>Each event keeps its claimed work date, the server's submission time, its evidence and its review decision separately.</p></div></div>
+      {% if events %}
+      <div class="table-wrap"><table class="table stack">
+        <thead><tr><th>Work date</th><th>Type</th><th>Submitted</th><th>Evidence</th><th>Review</th></tr></thead>
+        <tbody>{% for e in events %}
           <tr>
-            <td class="whitespace-nowrap">{{ r.sample_date|date:"d M Y" }}{% if r.report_date %}<div class="text-xs muted">report {{ r.report_date|date:"d M Y" }}</div>{% endif %}</td>
-            <td>{{ r.lab_name }}<div><a class="text-xs" href="{% url 'qr_app:report_file' company.slug r.pk %}" target="_blank" rel="noopener">Open original</a></div></td>
-            <td class="text-sm">{{ r.parameters|default:"—" }}{% if r.results_summary %}<div class="text-xs muted mt-1">{{ r.results_summary|linebreaksbr }}</div>{% endif %}</td>
-            <td>{% badge 'report' r.review_status %}{% if r.reviewed_by %}<div class="text-xs muted mt-1">{{ r.reviewed_by.email }}, {{ r.reviewed_at|date:"d M Y" }}</div>{% elif membership.is_admin %}
-              <form method="post" action="{% url 'qr_app:report_review' company.slug r.pk %}" class="mt-1" data-once>{% csrf_token %}<button class="text-xs underline" type="submit">Mark reviewed</button></form>{% endif %}</td>
+            <td data-label="Work date"><a href="{% url 'qr_app:event_detail' company.slug e.pk %}" class="font-semibold">{{ e.work_date|date:"d M Y" }}</a>{% if e.amends_id %}<div class="text-xs muted">corrects #{{ e.amends_id }}</div>{% endif %}</td>
+            <td data-label="Type">{{ e.get_event_type_display }}</td>
+            <td data-label="Submitted" class="text-xs">{{ e.author.email }}<div class="muted">{{ e.created_at|date:"d M Y, H:i" }}</div></td>
+            <td data-label="Evidence">{% if e.evidence_count %}<span class="badge badge-good">{{ e.evidence_count }} file{{ e.evidence_count|pluralize }}</span>{% else %}{% badge 'evidence' 'missing' %}{% endif %}</td>
+            <td data-label="Review">{% badge 'review' e.review_status %}</td>
           </tr>
         {% endfor %}</tbody></table></div>
       {% else %}
-        <div class="empty"><strong>No water-quality report linked.</strong>This is a documentation gap, not a finding about the water.</div>
+        <div class="empty"><strong>No maintenance recorded yet</strong><p>Record cleaning, disinfection, inspection or repair with before-and-after photos.</p>
+          <a class="btn btn-secondary" href="{% url 'qr_app:event_create' company.slug tank.pk %}">Record maintenance</a></div>
+      {% endif %}
+    </section>
+
+    {# ---- Water quality ---- #}
+    <section class="panel lane-quality" aria-labelledby="wq-h">
+      <div class="panel-head"><div><span class="lane-tag quality">Water-quality evidence, separate from maintenance</span>
+        <h2 id="wq-h" class="mt-1">Laboratory reports</h2>
+        <p>A report applies only to the sample, date and parameters it lists. Accepting maintenance does not change this section, and this section does not change maintenance status.</p></div></div>
+      {% if reports %}
+      <div class="table-wrap"><table class="table stack">
+        <thead><tr><th>Sample date</th><th>Laboratory</th><th>Parameters and results as reported</th><th>Status</th></tr></thead>
+        <tbody>{% for r in reports %}
+          <tr>
+            <td data-label="Sample" class="whitespace-nowrap">{{ r.sample_date|date:"d M Y" }}{% if r.report_date %}<div class="text-xs muted">report {{ r.report_date|date:"d M Y" }}</div>{% endif %}</td>
+            <td data-label="Laboratory">{{ r.lab_name }}<div><a class="text-xs" href="{% url 'qr_app:report_file' company.slug r.pk %}" target="_blank" rel="noopener">Open original</a></div></td>
+            <td data-label="Reported" class="text-sm">{{ r.parameters|default:"Not listed" }}{% if r.results_summary %}<div class="text-xs muted mt-1">{{ r.results_summary|linebreaksbr }}</div>{% endif %}</td>
+            <td data-label="Status">{% badge 'report' r.review_status %}{% if r.reviewed_by %}<div class="text-xs muted mt-1">{{ r.reviewed_by.email }}, {{ r.reviewed_at|date:"d M Y" }}</div>{% elif membership.is_admin %}
+              <form method="post" action="{% url 'qr_app:report_review' company.slug r.pk %}" class="mt-1" data-once>{% csrf_token %}<button class="link-btn text-xs" type="submit">Mark reviewed</button></form>{% endif %}</td>
+          </tr>
+        {% endfor %}</tbody></table></div>
+      {% else %}
+        <div class="empty"><strong>No water-quality report linked.</strong><p>This is a documentation gap, not a finding about the water.</p>
+          {% if membership.is_admin %}<a class="btn btn-ghost" href="{% url 'qr_app:report_create' company.slug tank.pk %}">Link lab report</a>{% endif %}</div>
       {% endif %}
     </section>
   </div>
 
-  <aside class="grid gap-6 content-start">
-    <section class="card card-pad text-center">
-      <p class="eyebrow mb-2">Tank QR code</p>
-      <img src="{% url 'qr_app:tank_qr' company.slug tank.pk %}" alt="QR code linking to the public status page of {{ tank.tank_code }}" class="mx-auto" width="200" height="200">
+  <aside class="grid gap-6 min-w-0" aria-label="Tank summary">
+    <section class="panel panel-pad text-center">
+      <h2 class="text-lg">QR status page</h2>
+      <img src="{% url 'qr_app:tank_qr' company.slug tank.pk %}" alt="QR code linking to the public status page of {{ tank.tank_code }}" class="mx-auto mt-3" width="190" height="190">
       <p class="text-xs muted mt-2 break-all">{{ public_url }}</p>
-      <div class="flex gap-2 justify-center mt-3">
-        <a class="btn btn-ghost" href="{% url 'qr_app:tank_qr' company.slug tank.pk %}?download=1">Download PNG</a>
-        <a class="btn btn-ghost" href="{{ public_url }}" target="_blank" rel="noopener">Open public page</a>
+      <div class="flex flex-wrap gap-2 justify-center mt-4">
+        <a class="btn btn-ghost btn-sm" href="{% url 'qr_app:tank_qr' company.slug tank.pk %}?download=1">Download PNG</a>
+        <a class="btn btn-ghost btn-sm" href="{{ public_url }}" target="_blank" rel="noopener">Open public page</a>
       </div>
     </section>
-    <section class="card card-pad">
-      <h2 class="font-bold mb-3">Schedule</h2>
-      <dl class="grid gap-2 text-sm">
-        <div class="flex justify-between gap-2"><dt class="muted">Maintenance interval</dt><dd>every {{ tank.maintenance_interval_days }} days</dd></div>
-        <div class="flex justify-between gap-2"><dt class="muted">Last accepted maintenance</dt><dd>{{ tank.last_accepted_date|date:"d M Y"|default:"None on record" }}</dd></div>
-        <div class="flex justify-between gap-2"><dt class="muted">Last recorded (any status)</dt><dd>{{ tank.last_recorded_date|date:"d M Y"|default:"—" }}</dd></div>
-        <div class="flex justify-between gap-2"><dt class="muted">Next due</dt><dd>{{ tank.next_due_date|date:"d M Y"|default:"Now" }}</dd></div>
-        <div class="flex justify-between gap-2"><dt class="muted">Report expected</dt><dd>{% if tank.report_interval_days %}every {{ tank.report_interval_days }} days{% else %}No policy set{% endif %}</dd></div>
-        <div class="flex justify-between gap-2"><dt class="muted">Responsible</dt><dd>{{ tank.responsible.email|default:"Unassigned" }}</dd></div>
-        <div class="flex justify-between gap-2"><dt class="muted">Placement</dt><dd>{{ tank.get_placement_display }}</dd></div>
-        <div class="flex justify-between gap-2"><dt class="muted">Sun exposure</dt><dd>{{ tank.get_shade_display }}</dd></div>
-        <div class="flex justify-between gap-2"><dt class="muted">Material</dt><dd>{{ tank.get_material_display }}</dd></div>
-        <div class="flex justify-between gap-2"><dt class="muted">Capacity</dt><dd>{% if tank.capacity_litres %}{{ tank.capacity_litres }} L{% else %}—{% endif %}</dd></div>
+    <section class="panel panel-pad">
+      <h2 class="text-lg mb-3">Schedule and profile</h2>
+      <dl class="kv">
+        <div><dt>Maintenance interval</dt><dd>every {{ tank.maintenance_interval_days }} days</dd></div>
+        <div><dt>Last accepted maintenance</dt><dd>{{ tank.last_accepted_date|date:"d M Y"|default:"None on record" }}</dd></div>
+        <div><dt>Last recorded, any status</dt><dd>{{ tank.last_recorded_date|date:"d M Y"|default:"None" }}</dd></div>
+        <div><dt>Next due</dt><dd>{{ tank.next_due_date|date:"d M Y"|default:"Now" }}</dd></div>
+        <div><dt>Report expected</dt><dd>{% if tank.report_interval_days %}every {{ tank.report_interval_days }} days{% else %}No policy set{% endif %}</dd></div>
+        <div><dt>Responsible</dt><dd class="break-all">{{ tank.responsible.email|default:"Unassigned" }}</dd></div>
+        <div><dt>Placement</dt><dd>{{ tank.get_placement_display }}</dd></div>
+        <div><dt>Sun exposure</dt><dd>{{ tank.get_shade_display }}</dd></div>
+        <div><dt>Material</dt><dd>{{ tank.get_material_display }}</dd></div>
+        <div><dt>Capacity</dt><dd>{% if tank.capacity_litres %}{{ tank.capacity_litres }} L{% else %}Not recorded{% endif %}</dd></div>
       </dl>
     </section>
-    <section class="card card-pad">
-      <h2 class="font-bold mb-3">Open follow-ups</h2>
-      {% for t in followups %}
-        <div class="py-2 border-b last:border-0 text-sm" style="border-color:var(--line)">{{ t.title }}<div class="text-xs muted">due {{ t.due_date|date:"d M Y" }} · {{ t.assigned_to.email|default:"unassigned" }}</div></div>
-      {% empty %}<p class="text-sm muted">None open.</p>{% endfor %}
-      <a class="text-sm block mt-3" href="{% url 'qr_app:followup_list' company.slug %}">Manage follow-ups →</a>
+    <section class="panel panel-pad">
+      <h2 class="text-lg mb-3">Open follow-ups</h2>
+      {% if followups %}<ol class="timeline">{% for t in followups %}<li><span class="text-sm">{{ t.title }}</span><span class="when">due {{ t.due_date|date:"d M Y" }}, {{ t.assigned_to.email|default:"unassigned" }}</span></li>{% endfor %}</ol>
+      {% else %}<p class="text-sm muted">None open.</p>{% endif %}
+      <a class="text-sm font-semibold" href="{% url 'qr_app:followup_list' company.slug %}">Manage follow-ups</a>
     </section>
   </aside>
 </div>

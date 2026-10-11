@@ -1,13 +1,13 @@
 {% extends 'base.html' %}
-{% block title %}Register sensor · {{ tank.tank_code }}{% endblock %}
+{% block title %}Register probe, {{ tank.tank_code }}{% endblock %}
 {% block content %}
-<div class="max-w-xl mx-auto">
-  <a href="{% url 'qr_app:tank_detail' company.slug tank.pk %}" class="text-sm">← {{ tank.tank_code }}</a>
-  <h1 class="text-3xl font-bold mt-2">Register a temperature sensor</h1>
-  <p class="muted mb-4">For an in-tank probe (for example ESP32 + DS18B20). DHARA issues a secret token for this device; it is shown once.</p>
-  <form method="post" class="card card-pad" data-once>{% csrf_token %}
+<div class="max-w-2xl">
+  <a class="back-link" href="{% url 'qr_app:tank_detail' company.slug tank.pk %}">{{ tank.tank_code }}</a>
+  <header class="page-head"><div><h1>Register a temperature probe</h1>
+    <p class="lede">For an in-tank probe such as an ESP32 with a DS18B20 sensor. DHARA issues a secret token for this device and shows it once.</p></div></header>
+  <form method="post" class="panel panel-pad" data-once data-pending="Registering probe">{% csrf_token %}
     {% include 'partials/form_fields.html' %}
-    <button class="btn btn-primary" type="submit">Register and show token</button>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Register and show token</button></div>
   </form>
 </div>
 {% endblock %}

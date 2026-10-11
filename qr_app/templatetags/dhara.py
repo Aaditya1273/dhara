@@ -43,3 +43,19 @@ BADGES = {
 def badge(kind, value):
     label, tone = BADGES[kind].get(value, (value, 'neutral'))
     return format_html('<span class="badge badge-{}">{}</span>', tone, label)
+
+
+@register.filter
+def accessible(field):
+    """Render a form widget with aria-describedby (help + errors) and aria-invalid when it has errors."""
+    ids = []
+    if field.help_text:
+        ids.append(f'{field.auto_id}_help')
+    if field.errors:
+        ids.append(f'{field.auto_id}_error')
+    attrs = {}
+    if ids:
+        attrs['aria-describedby'] = ' '.join(ids)
+    if field.errors:
+        attrs['aria-invalid'] = 'true'
+    return field.as_widget(attrs=attrs)

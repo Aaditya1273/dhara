@@ -1003,3 +1003,58 @@ class ObservationPhotoAndInterventionTests(DharaTestCase):
         self.assertTrue(AuditEvent.objects.filter(action='intervention.recorded', target_id=str(iv.pk)).exists())
         r = self.client.get(self.url('tank_detail', self.tank.pk))   # no location: twin explains, no crash
         self.assertEqual(r.status_code, 200)
+
+
+# --- Redesign: server-side pieces of the new interface --------------------------------------
+
+class InterfaceTests(DharaTestCase):
+    def test_landing_links_live_demo_qr_only_when_demo_exists(self):
+        r = self.client.get('/')
+        self.assertContains(r, 'Water deserves more than a record.')
+        self.assertIsNone(r.context['demo_qr_url'])
+        from .management.commands.seed_demo import DEMO_INSTITUTION
+        demo = Company.objects.create(name=DEMO_INSTITUTION)
+        t = Equipment.objects.create(company=demo, tank_code='TANK-A', name='Demo', maintenance_interval_days=30)
+        r = self.client.get('/')
+        self.assertEqual(r.context['demo_qr_url'], reverse('public_tank_status', args=[t.public_token]))
+        self.assertContains(r, 'Illustration of the drawing rules, not measured data')
+
+    def test_series_chart_requires_two_points_and_draws_threshold(self):
+        from .views import series_chart
+        now = timezone.now()
+        self.assertIsNone(series_chart([(now, 0.4)], 'mg/L', 0.2))
+        c = series_chart([(now - timedelta(hours=5), 0.4), (now, 0.15)], 'mg/L', 0.2, 'configured minimum')
+        self.assertEqual(len(c['pts']), 2)
+        self.assertTrue(c['path'].startswith('M'))
+        # threshold sits between the two readings on the y axis (SVG y grows downwards)
+        ys = sorted(float(p['y']) for p in c['pts'])
+        self.assertTrue(ys[0] < float(c['thr_y']) < ys[1])
+        self.assertIn('0.15 mg/L', c['pts'][1]['label'])
+
+    def test_tank_page_charts_and_empty_states(self):
+        self.login(self.tech)
+        r = self.client.get(self.url('tank_detail', self.tank.pk))
+        self.assertContains(r, 'The chart appears after two temperature readings')
+        for v, h in (('29.5', 3), ('31.0', 1)):
+            services.record_observation(self.tank, self.tech, 'water_temp', Decimal(v), '°C', 'thermometer',
+                                        timezone.now() - timedelta(hours=h))
+        r = self.client.get(self.url('tank_detail', self.tank.pk))
+        self.assertContains(r, 'class="s-water"')
+        self.assertContains(r, 'Show tank-water temperature as a table')
+
+    def test_form_fields_are_accessible(self):
+        self.login(self.warden)
+        r = self.client.post(self.url('tank_create'), {'tank_code': '', 'name': 'X', 'maintenance_interval_days': 30})
+        html = r.content.decode()
+        self.assertIn('aria-invalid="true"', html)
+        self.assertIn('aria-describedby="id_tank_code_help id_tank_code_error"', html)
+        self.assertIn('<span class="sr-only">(required)</span>', html)
+
+    def test_no_cdn_runtime_and_assets_served(self):
+        r = self.client.get('/')
+        html = r.content.decode()
+        self.assertNotIn('cdn.tailwindcss.com', html)
+        self.assertNotIn('alpinejs', html)
+        for path in ('css/tw.css', 'css/style.css', 'js/dhara.js', 'fonts/anek-latin-var.woff2'):
+            from django.contrib.staticfiles import finders
+            self.assertIsNotNone(finders.find(path), path)

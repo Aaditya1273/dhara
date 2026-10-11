@@ -1,13 +1,11 @@
 {% extends 'base.html' %}
 {% block title %}Register institution{% endblock %}
 {% block content %}
-<div class="max-w-md mx-auto card card-pad">
-  <h1 class="text-2xl font-bold mb-1">Register your institution</h1>
-  <p class="muted mb-6 text-sm">You become the institution's first warden / administrator. Invite technicians and co-wardens afterwards.</p>
-  <form method="post" data-once>{% csrf_token %}
-    {% include 'partials/form_fields.html' %}
-    <button class="btn btn-primary w-full" type="submit">Create institution</button>
-  </form>
-  <p class="text-sm muted mt-6">Already registered? <a href="{% url 'login' %}">Sign in</a>.</p>
-</div>
+<h1 class="text-3xl" style="font-stretch:110%">Register your institution</h1>
+<p class="muted mt-2 mb-6">You become its first warden. Invite technicians and co-wardens afterwards from the Team page.</p>
+<form method="post" class="panel panel-pad" data-once data-pending="Creating institution">{% csrf_token %}
+  {% include 'partials/form_fields.html' %}
+  <button class="btn btn-primary w-full" type="submit">Create institution</button>
+</form>
+<p class="text-sm muted mt-6">Already registered? <a href="{% url 'login' %}">Sign in</a>.</p>
 {% endblock %}
