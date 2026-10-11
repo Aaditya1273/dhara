@@ -76,6 +76,13 @@ class CompanyView(CompanyRequiredMixin, ActiveSubscriptionRequiredMixin, View):
 class LandingPageView(TemplateView):
     template_name = 'landing_page.html'
 
+    def get_context_data(self, **kwargs):
+        from .management.commands.seed_demo import DEMO_INSTITUTION
+        ctx = super().get_context_data(**kwargs)
+        demo = Equipment.objects.filter(company__name=DEMO_INSTITUTION, tank_code='TANK-A').first()
+        ctx['demo_qr_url'] = reverse('public_tank_status', args=[demo.public_token]) if demo else None
+        return ctx
+
 
 def healthz(request):
     return JsonResponse({'status': 'ok'})
@@ -181,6 +188,9 @@ class DashboardView(CompanyView):
                           or t.report_missing][:8],
             'my_tasks': my_tasks, 'my_events': my_events,
             'activity': AuditEvent.objects.filter(company=self.company).select_related('actor')[:8],
+            'recent_obs': TankObservation.objects.filter(equipment__company=self.company).select_related(
+                'equipment', 'entered_by', 'device')[:6],
+            'priorities': [(t, p) for t, p in services.compute_priorities(self.company)[1] if p.actionable][:4],
         })
 
 
@@ -248,6 +258,7 @@ class TankDetailView(CompanyView):
             'latest': services.latest_readings(tank),
             'sensors': tank.sensors.all(),
             **self.twin_context(tank),
+            **measurement_charts(tank),
         })
 
     def twin_context(self, tank):
@@ -301,6 +312,46 @@ class ObservationCreateView(CompanyView):
         messages.success(request, f"Recorded {obs.get_kind_display().lower()}: {obs.value} "
                                   f"{TankObservation.CANONICAL_UNIT[obs.kind]}.")
         return redirect('qr_app:tank_detail', company_slug=self.company.slug, pk=tank.pk)
+
+
+def series_chart(points, unit, threshold=None, threshold_label='', width=640, height=190):
+    """Single-series SVG geometry (server-rendered, no JS). points: [(aware dt, float)] oldest first.
+    Returns None if fewer than 2 points, so templates show an explanatory empty state instead."""
+    if len(points) < 2:
+        return None
+    left, right, top, bottom = 44, 12, 14, 30
+    t0, t1 = points[0][0], points[-1][0]
+    span = max((t1 - t0).total_seconds(), 1)
+    vals = [v for _, v in points] + ([threshold] if threshold is not None else [])
+    lo, hi = min(vals), max(vals)
+    pad = max((hi - lo) * .15, .05 if unit == 'mg/L' else .5)
+    lo, hi = lo - pad, hi + pad
+    x = lambda t: left + (t - t0).total_seconds() / span * (width - left - right)
+    y = lambda v: top + (hi - v) / (hi - lo) * (height - top - bottom)
+    fmt = '{:.2f}' if unit == 'mg/L' else '{:.1f}'
+    ticks = [lo + (hi - lo) * f for f in (0.15, 0.5, 0.85)]
+    tz_now = timezone.localtime
+    return {
+        'w': width, 'h': height, 'base': height - bottom, 'left': left, 'right': width - right,
+        'path': 'M' + ' L'.join(f'{x(t):.1f},{y(v):.1f}' for t, v in points),
+        'pts': [{'x': f'{x(t):.1f}', 'y': f'{y(v):.1f}', 'label': f'{fmt.format(v)} {unit}, {tz_now(t):%d %b %H:%M}'}
+                for t, v in points[-120:]],
+        'ticks': [{'y': f'{y(v):.1f}', 'label': fmt.format(v)} for v in ticks],
+        'x0': f'{tz_now(t0):%d %b}', 'x1': f'{tz_now(t1):%d %b %H:%M}',
+        'thr_y': f'{y(threshold):.1f}' if threshold is not None else None, 'thr_label': threshold_label,
+        'rows': [(tz_now(t), fmt.format(v)) for t, v in reversed(points[-50:])], 'unit': unit,
+    }
+
+
+def measurement_charts(tank, days=14):
+    since = timezone.now() - timedelta(days=days)
+    q = tank.observations.filter(measured_at__gte=since).order_by('measured_at')
+    temps = [(o.measured_at, float(o.value)) for o in q.filter(kind='water_temp')]
+    chlor = [(o.measured_at, float(o.value)) for o in q.filter(kind='free_chlorine')]
+    cl_min = settings.DHARA_PRIORITY['CHLORINE_MIN_MG_L']
+    return {'temp_chart': series_chart(temps, '°C'),
+            'chlorine_chart': series_chart(chlor, 'mg/L', cl_min, f'configured minimum {cl_min:g} mg/L'),
+            'chart_days': days}
 
 
 def twin_chart(tank, twin, width=640, height=200, pad=28):

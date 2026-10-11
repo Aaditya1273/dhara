@@ -1,0 +1,12 @@
+{
+  "name": "dhara-ui",
+  "private": true,
+  "description": "Builds static/css/tw.css from the Django templates. Output is committed; Node is not needed at runtime.",
+  "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.js -i static/src/tw.css -o static/css/tw.css --minify",
+    "watch:css": "tailwindcss -c tailwind.config.js -i static/src/tw.css -o static/css/tw.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.17"
+  }
+}

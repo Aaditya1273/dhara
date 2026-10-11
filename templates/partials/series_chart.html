@@ -1,0 +1,15 @@
+{% comment %}Renders series_chart() output. Params: c (chart dict), cls (series class), title, desc.{% endcomment %}
+<figure>
+  <svg class="chart" viewBox="0 0 {{ c.w }} {{ c.h }}" role="img" aria-label="{{ desc }}">
+    {% for t in c.ticks %}<line class="grid" x1="{{ c.left }}" y1="{{ t.y }}" x2="{{ c.right }}" y2="{{ t.y }}"/><text x="2" y="{{ t.y }}" dy="4">{{ t.label }}</text>{% endfor %}
+    <line class="axis" x1="{{ c.left }}" y1="{{ c.base }}" x2="{{ c.right }}" y2="{{ c.base }}"/>
+    {% if c.thr_y %}<line class="threshold" x1="{{ c.left }}" y1="{{ c.thr_y }}" x2="{{ c.right }}" y2="{{ c.thr_y }}"/><text x="{{ c.right }}" y="{{ c.thr_y }}" dy="-5" text-anchor="end">{{ c.thr_label }}</text>{% endif %}
+    <path class="{{ cls }}" d="{{ c.path }}"/>
+    {% for p in c.pts %}<g class="pt" tabindex="0" aria-label="{{ p.label }}"><title>{{ p.label }}</title><circle class="hit" cx="{{ p.x }}" cy="{{ p.y }}" r="11"/><circle class="dot {% if cls == 's-chlorine' %}dot-chlorine{% else %}dot-water{% endif %}" cx="{{ p.x }}" cy="{{ p.y }}" r="4"/></g>{% endfor %}
+    <text x="{{ c.left }}" y="{{ c.h }}" dy="-8">{{ c.x0 }}</text><text x="{{ c.right }}" y="{{ c.h }}" dy="-8" text-anchor="end">{{ c.x1 }}</text>
+  </svg>
+  <details class="data-table"><summary>Show {{ title|lower }} as a table</summary>
+    <div class="table-wrap mt-2"><table class="table"><thead><tr><th>Measured</th><th class="num">Value ({{ c.unit }})</th></tr></thead>
+      <tbody>{% for t, v in c.rows %}<tr><td>{{ t|date:"d M Y, H:i" }}</td><td class="num">{{ v }}</td></tr>{% endfor %}</tbody></table></div>
+  </details>
+</figure>

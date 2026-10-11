@@ -1,0 +1,22 @@
+{% with u=request.resolver_match.url_name %}
+<div class="nav-group">
+  <span>Operate</span>
+  <a class="side-link" href="{% url 'qr_app:dashboard' company.slug %}" {% if u == 'dashboard' %}aria-current="page"{% endif %}><svg aria-hidden="true"><use href="#i-overview"/></svg>Overview</a>
+  <a class="side-link" href="{% url 'qr_app:tank_list' company.slug %}" {% if 'tank' in u or 'event' in u or u in 'report_create observation_create sensor_create intervention_create' %}aria-current="page"{% endif %}><svg aria-hidden="true"><use href="#i-tank"/></svg>Tanks</a>
+  <a class="side-link" href="{% url 'qr_app:test_priority' company.slug %}" {% if u == 'test_priority' %}aria-current="page"{% endif %}><svg aria-hidden="true"><use href="#i-priority"/></svg>Test priority</a>
+  <a class="side-link" href="{% url 'qr_app:followup_list' company.slug %}" {% if 'followup' in u %}aria-current="page"{% endif %}><svg aria-hidden="true"><use href="#i-task"/></svg>Follow-ups</a>
+</div>
+<div class="nav-group">
+  <span>Evidence</span>
+  {% if membership.is_admin %}<a class="side-link" href="{% url 'qr_app:review_queue' company.slug %}" {% if u == 'review_queue' %}aria-current="page"{% endif %}><svg aria-hidden="true"><use href="#i-review"/></svg>Review queue</a>{% endif %}
+  <a class="side-link" href="{% url 'qr_app:report_list' company.slug %}" {% if u == 'report_list' %}aria-current="page"{% endif %}><svg aria-hidden="true"><use href="#i-lab"/></svg>Water quality</a>
+  {% if membership.is_admin %}<a class="side-link" href="{% url 'qr_app:activity_history' company.slug %}" {% if u == 'activity_history' %}aria-current="page"{% endif %}><svg aria-hidden="true"><use href="#i-history"/></svg>Activity</a>{% endif %}
+</div>
+{% if membership.is_admin %}
+<div class="nav-group">
+  <span>Institution</span>
+  <a class="side-link" href="{% url 'qr_app:manage_team' company.slug %}" {% if 'team' in u or 'member' in u %}aria-current="page"{% endif %}><svg aria-hidden="true"><use href="#i-team"/></svg>Team</a>
+  <a class="side-link" href="{% url 'qr_app:company_settings' company.slug %}" {% if u == 'company_settings' %}aria-current="page"{% endif %}><svg aria-hidden="true"><use href="#i-settings"/></svg>Settings</a>
+</div>
+{% endif %}
+{% endwith %}

@@ -14,3 +14,4 @@ deploy/aws/iot/*.pem
 deploy/aws/iot/*.crt
 deploy/aws/iot/*.key
 deploy/aws/iot/cert.arn
+node_modules/

@@ -1,72 +1,111 @@
 {% extends 'base.html' %}{% load dhara %}
 {% block title %}Overview{% endblock %}
 {% block content %}
-<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+<header class="page-head">
   <div>
-    <p class="eyebrow">{{ company.name }}</p>
-    <h1 class="text-3xl font-bold">Overview</h1>
+    <p class="context">{{ company.name }}</p>
+    <h1>Overview</h1>
+    <p class="lede">What needs measuring, reviewing or resolving today, from your institution's own records.</p>
   </div>
-  <div class="flex gap-2">
+  <div class="flex flex-wrap gap-2">
     {% if membership.is_admin %}<a class="btn btn-primary" href="{% url 'qr_app:tank_create' company.slug %}">Register tank</a>{% endif %}
-    <a class="btn btn-ghost" href="{% url 'qr_app:tank_list' company.slug %}">All tanks</a>
+    <a class="btn btn-ghost" href="{% url 'qr_app:test_priority' company.slug %}">Test priority</a>
   </div>
-</div>
+</header>
 
-<section class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8" aria-label="Key figures">
-  <a href="{% url 'qr_app:tank_list' company.slug %}" class="card card-pad no-underline" style="color:var(--ink)"><p class="eyebrow">Registered tanks</p><p class="stat mt-1">{{ tank_count }}</p></a>
-  <a href="{% url 'qr_app:tank_list' company.slug %}?status=attention" class="card card-pad no-underline" style="color:var(--ink)"><p class="eyebrow">Need maintenance</p><p class="stat mt-1" {% if overdue_count %}style="color:var(--bad)"{% endif %}>{{ overdue_count }}</p><p class="text-xs muted">overdue or none accepted</p></a>
-  <a href="{% url 'qr_app:tank_list' company.slug %}?status=due_soon" class="card card-pad no-underline" style="color:var(--ink)"><p class="eyebrow">Due in 14 days</p><p class="stat mt-1">{{ due_soon_count }}</p></a>
-  <a href="{% if membership.is_admin %}{% url 'qr_app:review_queue' company.slug %}{% else %}#mine{% endif %}" class="card card-pad no-underline" style="color:var(--ink)"><p class="eyebrow">Awaiting review</p><p class="stat mt-1">{{ pending_count }}</p>{% if pending_no_evidence_count %}<p class="text-xs" style="color:var(--warn)">{{ pending_no_evidence_count }} without evidence</p>{% endif %}</a>
-  <a href="{% url 'qr_app:report_list' company.slug %}" class="card card-pad no-underline col-span-2 lg:col-span-1" style="color:var(--ink)"><p class="eyebrow">Reports missing</p><p class="stat mt-1">{{ missing_report_count }}</p><p class="text-xs muted">per configured policy</p></a>
+<section class="panel overflow-hidden mb-6" aria-label="Key figures">
+  <div class="metric-strip">
+    <a class="metric" href="{% url 'qr_app:tank_list' company.slug %}"><span class="label">Registered tanks</span><span class="stat">{{ tank_count }}</span><small>with QR status pages</small></a>
+    <a class="metric {% if overdue_count %}is-alert{% endif %}" href="{% url 'qr_app:tank_list' company.slug %}?status=attention"><span class="label">Need maintenance</span><span class="stat">{{ overdue_count }}</span><small>overdue, or none accepted yet</small></a>
+    <a class="metric" href="{% url 'qr_app:tank_list' company.slug %}?status=due_soon"><span class="label">Due in 14 days</span><span class="stat">{{ due_soon_count }}</span><small>per configured interval</small></a>
+    <a class="metric" href="{% if membership.is_admin %}{% url 'qr_app:review_queue' company.slug %}{% else %}#mine{% endif %}"><span class="label">Awaiting review</span><span class="stat">{{ pending_count }}</span><small>{% if pending_no_evidence_count %}{{ pending_no_evidence_count }} without evidence{% else %}maintenance submissions{% endif %}</small></a>
+    <a class="metric" href="{% url 'qr_app:report_list' company.slug %}"><span class="label">Reports missing</span><span class="stat">{{ missing_report_count }}</span><small>where a policy expects one</small></a>
+  </div>
 </section>
 
-<div class="grid lg:grid-cols-3 gap-6 items-start">
-  <section class="lg:col-span-2 card">
-    <div class="card-pad pb-2 flex justify-between items-center"><h2 class="text-lg font-bold">Tanks needing attention</h2>
-      <a class="text-sm" href="{% url 'qr_app:followup_list' company.slug %}">{{ open_task_count }} open follow-up{{ open_task_count|pluralize }} →</a></div>
-    {% if attention %}
-      <div class="overflow-x-auto"><table class="table">
+<div class="grid gap-6 xl:grid-cols-3 items-start">
+  <div class="grid gap-6 xl:col-span-2">
+    <section class="panel" aria-labelledby="prio-h">
+      <div class="panel-head"><div><h2 id="prio-h">Measure or review next</h2><p>Ranked by your thresholds, reading age and weather. Each reason is shown.</p></div>
+        <a class="btn btn-ghost btn-sm" href="{% url 'qr_app:test_priority' company.slug %}">All priorities</a></div>
+      {% if priorities %}
+      <ul class="grid">
+        {% for t, p in priorities %}
+        <li class="flex flex-col sm:flex-row gap-3 sm:items-start justify-between px-5 sm:px-8 py-4 border-t" style="border-color:var(--line)">
+          <div class="min-w-0"><a class="font-semibold" href="{% url 'qr_app:tank_detail' company.slug t.pk %}">{{ t.tank_code }}</a> <span class="muted text-sm">{{ t.name }}</span>
+            <p class="text-sm mt-1">{{ p.reasons.0 }}</p></div>
+          <div class="flex sm:flex-col gap-2 sm:items-end shrink-0">{% badge 'priority' p.level %}<span class="text-xs font-semibold">{{ p.action_label }}</span></div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty"><strong>No measurement or review is due</strong><p>Every tank has a fresh free-chlorine reading inside your thresholds.</p></div>
+      {% endif %}
+    </section>
+
+    <section class="panel" aria-labelledby="att-h">
+      <div class="panel-head"><div><h2 id="att-h">Maintenance and reports</h2><p>Tanks whose configured schedule is not met.</p></div>
+        <a class="btn btn-ghost btn-sm" href="{% url 'qr_app:followup_list' company.slug %}">{{ open_task_count }} open follow-up{{ open_task_count|pluralize }}</a></div>
+      {% if attention %}
+      <div class="table-wrap"><table class="table stack">
         <thead><tr><th>Tank</th><th>Maintenance</th><th>Water-quality report</th></tr></thead>
         <tbody>{% for t in attention %}
-          <tr><td><a href="{% url 'qr_app:tank_detail' company.slug t.pk %}" class="font-semibold">{{ t.tank_code }}</a><div class="muted text-xs">{{ t.name }}{% if t.building %} · {{ t.building }}{% endif %}</div></td>
-            <td>{% badge 'maintenance' t.maintenance_status %}{% if t.next_due_date %}<div class="text-xs muted mt-1">due {{ t.next_due_date|date:"d M Y" }}</div>{% endif %}</td>
-            <td>{% if t.report_missing %}<span class="badge badge-warn">No current report linked</span>{% elif t.last_sample_date %}<span class="text-xs muted">sample {{ t.last_sample_date|date:"d M Y" }}</span>{% else %}<span class="text-xs muted">No report expected by policy</span>{% endif %}</td></tr>
+          <tr><td data-label="Tank"><a href="{% url 'qr_app:tank_detail' company.slug t.pk %}" class="font-semibold">{{ t.tank_code }}</a><div class="muted text-xs">{{ t.name }}{% if t.building %}, {{ t.building }}{% endif %}</div></td>
+            <td data-label="Maintenance">{% badge 'maintenance' t.maintenance_status %}{% if t.next_due_date %}<div class="text-xs muted mt-1">due {{ t.next_due_date|date:"d M Y" }}</div>{% endif %}</td>
+            <td data-label="Report">{% if t.report_missing %}<span class="badge badge-warn">No current report linked</span>{% elif t.last_sample_date %}<span class="text-xs muted">sample {{ t.last_sample_date|date:"d M Y" }}</span>{% else %}<span class="text-xs muted">No report expected by policy</span>{% endif %}</td></tr>
         {% endfor %}</tbody></table></div>
-    {% elif tank_count %}
-      <div class="empty"><strong>Nothing needs attention right now</strong>All tanks are within their configured schedule.</div>
-    {% else %}
-      <div class="empty"><strong>No tanks registered yet</strong>{% if membership.is_admin %}<a href="{% url 'qr_app:tank_create' company.slug %}">Register your first tank</a> to start tracking maintenance.{% else %}Ask your warden to register tanks.{% endif %}</div>
-    {% endif %}
-  </section>
+      {% elif tank_count %}
+      <div class="empty"><strong>Every schedule is met</strong><p>All tanks are within their configured maintenance and report intervals.</p></div>
+      {% else %}
+      <div class="empty"><strong>Register your first tank</strong><p>Each tank gets an ID, a schedule policy and a printable QR code.</p>{% if membership.is_admin %}<a class="btn btn-primary" href="{% url 'qr_app:tank_create' company.slug %}">Register tank</a>{% else %}<p class="mt-2">Ask your warden to register tanks.</p>{% endif %}</div>
+      {% endif %}
+    </section>
 
-  <section class="card card-pad">
-    <h2 class="text-lg font-bold mb-3">Assigned to you</h2>
-    {% for task in my_tasks %}
-      <div class="py-2 border-b last:border-0" style="border-color:var(--line)">
-        <p class="text-sm font-medium">{{ task.title }}</p>
-        <p class="text-xs {% if task.is_overdue %}text-red-700{% else %}muted{% endif %}">{{ task.equipment.tank_code }} · due {{ task.due_date|date:"d M Y" }}</p>
-      </div>
-    {% empty %}
-      <p class="muted text-sm">No open follow-ups are assigned to you.</p>
-    {% endfor %}
-    <a class="btn btn-ghost w-full mt-4" href="{% url 'qr_app:followup_list' company.slug %}?show=mine">My follow-ups</a>
-  </section>
-</div>
+    <section class="panel" aria-labelledby="obs-h">
+      <div class="panel-head"><div><h2 id="obs-h">Recent field measurements</h2><p>Readings taken at tanks by people or in-tank probes. Not laboratory results.</p></div></div>
+      {% if recent_obs %}
+      <div class="table-wrap"><table class="table stack">
+        <thead><tr><th>Measured</th><th>Tank</th><th>Measurement</th><th class="num">Value</th><th>Source</th></tr></thead>
+        <tbody>{% for o in recent_obs %}
+          <tr><td data-label="Measured" class="whitespace-nowrap">{{ o.measured_at|date:"d M, H:i" }}</td>
+            <td data-label="Tank"><a href="{% url 'qr_app:tank_detail' company.slug o.equipment_id %}">{{ o.equipment.tank_code }}</a></td>
+            <td data-label="Measurement">{{ o.get_kind_display }}</td>
+            <td data-label="Value" class="num font-semibold">{{ o.value }} {% if o.kind == 'water_temp' %}°C{% else %}mg/L{% endif %}</td>
+            <td data-label="Source" class="text-xs">{% if o.device_id %}<span class="badge badge-info">probe</span> {% endif %}{{ o.source }}</td></tr>
+        {% endfor %}</tbody></table></div>
+      {% else %}
+      <div class="empty"><strong>No measurements yet</strong><p>Open a tank and choose Record measurement after a thermometer reading or a DPD chlorine test.</p></div>
+      {% endif %}
+    </section>
+  </div>
 
-<div class="grid lg:grid-cols-2 gap-6 mt-6">
-  <section class="card" id="mine">
-    <div class="card-pad pb-2"><h2 class="text-lg font-bold">Your recent submissions</h2></div>
-    {% if my_events %}<table class="table"><tbody>{% for e in my_events %}
-      <tr><td><a href="{% url 'qr_app:event_detail' company.slug e.pk %}">{{ e.get_event_type_display }} · {{ e.equipment.tank_code }}</a><div class="text-xs muted">work date {{ e.work_date|date:"d M Y" }}</div></td><td class="text-right">{% badge 'review' e.review_status %}</td></tr>
-    {% endfor %}</tbody></table>
-    {% else %}<div class="empty">You have not submitted maintenance yet. Open a tank and choose <em>Record maintenance</em>.</div>{% endif %}
-  </section>
-  <section class="card">
-    <div class="card-pad pb-2 flex justify-between"><h2 class="text-lg font-bold">Recent activity</h2>{% if membership.is_admin %}<a class="text-sm" href="{% url 'qr_app:activity_history' company.slug %}">Full history →</a>{% endif %}</div>
-    {% if activity %}<table class="table"><tbody>{% for a in activity %}
-      <tr><td>{{ a.summary }}<div class="text-xs muted">{{ a.actor.email|default:"Schedule rule" }} · {{ a.created_at|date:"d M Y, H:i" }}</div></td></tr>
-    {% endfor %}</tbody></table>
-    {% else %}<div class="empty">No activity yet.</div>{% endif %}
-  </section>
+  <div class="grid gap-6">
+    <section class="panel" aria-labelledby="mine-h">
+      <div class="panel-head"><h2 id="mine-h">Assigned to you</h2></div>
+      {% if my_tasks %}
+      <ul class="px-5 sm:px-8 pb-4">{% for task in my_tasks %}
+        <li class="py-3 border-t" style="border-color:var(--line)"><p class="text-sm font-medium">{{ task.title }}</p>
+          <p class="text-xs {% if task.is_overdue %}font-semibold{% endif %}" style="color:{% if task.is_overdue %}var(--bad){% else %}var(--muted){% endif %}">{{ task.equipment.tank_code }}, due {{ task.due_date|date:"d M Y" }}{% if task.is_overdue %} (past due){% endif %}</p></li>
+      {% endfor %}</ul>
+      {% else %}<div class="empty py-8"><p>No open follow-ups are assigned to you.</p></div>{% endif %}
+      <div class="panel-foot"><a href="{% url 'qr_app:followup_list' company.slug %}?show=mine">My follow-ups</a></div>
+    </section>
+
+    <section class="panel" id="mine" aria-labelledby="sub-h">
+      <div class="panel-head"><h2 id="sub-h">Your submissions</h2></div>
+      {% if my_events %}<ul class="px-5 sm:px-8 pb-4">{% for e in my_events %}
+        <li class="py-3 border-t flex justify-between gap-3" style="border-color:var(--line)"><div class="min-w-0"><a class="text-sm font-medium" href="{% url 'qr_app:event_detail' company.slug e.pk %}">{{ e.get_event_type_display }}, {{ e.equipment.tank_code }}</a><p class="text-xs muted">work date {{ e.work_date|date:"d M Y" }}</p></div>{% badge 'review' e.review_status %}</li>
+      {% endfor %}</ul>
+      {% else %}<div class="empty py-8"><p>Nothing submitted yet. Open a tank and choose Record maintenance.</p></div>{% endif %}
+    </section>
+
+    <section class="panel" aria-labelledby="act-h">
+      <div class="panel-head"><h2 id="act-h">Recent activity</h2></div>
+      {% if activity %}<ol class="timeline px-5 sm:px-8 pb-2">{% for a in activity %}
+        <li><span class="text-sm">{{ a.summary }}</span><span class="when">{{ a.actor.email|default:"Schedule rule" }}, {{ a.created_at|date:"d M H:i" }}</span></li>
+      {% endfor %}</ol>{% else %}<div class="empty py-8"><p>No activity yet.</p></div>{% endif %}
+      {% if membership.is_admin %}<div class="panel-foot"><a href="{% url 'qr_app:activity_history' company.slug %}">Full activity history</a></div>{% endif %}
+    </section>
+  </div>
 </div>
 {% endblock %}
