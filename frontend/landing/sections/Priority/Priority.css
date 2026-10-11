@@ -71,13 +71,40 @@
 .outcome::before { content: ''; position: absolute; inset: 0 0 auto; height: 4px; background: var(--lvl, var(--dhara-blue)); }
 .outcome.lvl-urgent { --lvl: var(--dhara-danger); } .outcome.lvl-high { --lvl: #d97706; } .outcome.lvl-medium { --lvl: var(--dhara-blue); }
 .outcome.lvl-low { --lvl: #94a3b8; } .outcome.lvl-none { --lvl: #16a34a; }
-.gauge { display: block; width: min(15rem, 100%); margin: 0 auto var(--s2); overflow: visible; }
+.gauge { display: block; width: min(17rem, 100%); margin: 0 auto var(--s2); overflow: visible; }
 .g-seg { fill: none; stroke-width: 14; stroke-linecap: butt; opacity: .22; transition: opacity var(--motion-slow) var(--ease-brand); }
 .g-seg.on { opacity: 1; }
 .g-tick { fill: var(--dhara-subtle); }
 .g-needle { fill: var(--dhara-navy); }
+.g-label { font: 600 8.5px var(--font-ui); fill: var(--dhara-subtle); transition: fill var(--motion-slow) var(--ease-brand); }
+.g-label.on { fill: var(--dhara-navy); font-weight: 700; }
 .g-hub { fill: var(--dhara-white); stroke: var(--dhara-navy); stroke-width: 2; }
 .outcome .action { font-size: clamp(1.5rem, 1.4vw + .9rem, 2rem); font-weight: 700; letter-spacing: -.035em; line-height: 1.08; margin: var(--s3) 0 var(--s2); color: var(--dhara-navy); }
 .outcome .follow { font-size: var(--fs-sm); color: var(--dhara-muted); max-width: 30ch; margin-inline: auto; }
 .engine-note { margin-top: var(--s4); max-width: 60rem; font-size: var(--fs-xs); color: var(--dhara-muted); }
 @media (prefers-reduced-motion: reduce) { .beam span { animation: none; opacity: .6; } }
+
+/* Pinned mode: everything must fit one screen. */
+.prio-sec.is-pinned { padding-block: 0; }
+.prio-sec .pin-stage .sec-head { margin-bottom: clamp(1rem, 2.5vh, 2rem); }
+.prio-sec .pin-stage .sec-head h2 { font-size: clamp(2.1rem, 2.4vw + .7rem, 3.2rem); }
+.prio-sec .pin-stage .sec-head p { font-size: var(--fs-base); margin-top: var(--s2); }
+.prio-sec .pin-stage .engine-note { margin-top: var(--s3); }
+@media (max-height: 900px) {
+  .prio-sec .pin-stage .sec-head p, .prio-sec .pin-stage .engine-note { display: none; }
+  .prio-sec .pin-stage .inst { padding: var(--s3); gap: var(--s2); }
+  .prio-sec .pin-stage .vial, .prio-sec .pin-stage .thermo { height: 84px; width: 42px; }
+  .prio-sec .pin-stage .rules-card, .prio-sec .pin-stage .outcome { padding: var(--s4); }
+  .prio-sec .pin-stage .gauge { width: min(14rem, 100%); }
+  .prio-sec .pin-stage .beam { height: 22px; }
+}
+@media (max-height: 760px) { .prio-sec .pin-stage .sec-head { display: none; } }
+
+/* Situation list: step number, title, engine level, and a bar that fills as the scroll moves through it. */
+.sc-tabs [role=tab] { grid-template-columns: auto 1fr; column-gap: var(--s3); }
+.sc-step { position: relative; grid-row: span 2; align-self: start; font-family: var(--font-display); font-size: 1.6rem; line-height: 1; color: var(--dhara-subtle);
+  transition: color var(--motion-normal) var(--ease-brand); }
+.sc-tabs [aria-selected=true] .sc-step { color: var(--dhara-blue); }
+.sc-progress { position: relative; grid-column: 1 / -1; height: 2px; margin-top: .35rem; border-radius: 2px; background: rgb(15 23 42 / 7%); overflow: hidden; }
+.sc-progress i { position: absolute; inset: 0; background: var(--dhara-blue); transform-origin: left; }
+.sc-hint { padding: var(--s3) var(--s4) var(--s2); font-size: var(--fs-2xs); color: var(--dhara-subtle); }
