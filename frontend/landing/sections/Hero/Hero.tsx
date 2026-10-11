@@ -1,14 +1,12 @@
 import { useRef } from 'react';
-import { motion, useMotionValue, useScroll, useSpring, useTransform } from 'motion/react';
+import { motion, useScroll, useTransform } from 'motion/react';
 import { data } from '../../data';
 import { useMedia, useMotionOK } from '../../hooks/media';
-import { HeroCards } from './HeroCards';
 import './Hero.css';
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
-/** Rooftop-tank photograph with real HTML measurement cards. On wide screens the photo, copy and cards
-    move at different depths as the page scrolls and as the pointer moves. */
+/** Rooftop-tank photograph behind the headline. On wide screens the photo and copy move at different depths as the page scrolls. */
 export function Hero() {
   const ref = useRef<HTMLElement>(null);
   const wide = useMedia('(min-width: 1100px)');
@@ -20,18 +18,9 @@ export function Hero() {
   const copyY = useTransform(scrollYProgress, [0, 1], [0, -90]);
   const copyFade = useTransform(scrollYProgress, [0, 0.7], [1, 0]);
 
-  // Pointer position in the hero, -1…1 on each axis, softened by a spring.
-  const px = useMotionValue(0), py = useMotionValue(0);
-  const sx = useSpring(px, { stiffness: 60, damping: 18 }), sy = useSpring(py, { stiffness: 60, damping: 18 });
-  const onMove = (e: React.PointerEvent) => {
-    if (!depth || e.pointerType !== 'mouse') return;
-    const r = e.currentTarget.getBoundingClientRect();
-    px.set(((e.clientX - r.left) / r.width) * 2 - 1);
-    py.set(((e.clientY - r.top) / r.height) * 2 - 1);
-  };
 
   return (
-    <section ref={ref} className="hero" aria-labelledby="hero-title" onPointerMove={onMove} onPointerLeave={() => { px.set(0); py.set(0); }}>
+    <section ref={ref} className="hero" aria-labelledby="hero-title">
       <motion.picture className="hero-media" style={depth ? { y: imgY, scale: imgScale } : undefined}
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1.2, ease }}>
         <source media="(max-width: 699px)" srcSet={data.img.heroMobile} />
@@ -62,7 +51,6 @@ export function Hero() {
         </motion.div>
       </div>
 
-      <HeroCards depth={depth} scroll={scrollYProgress} px={sx} py={sy} />
       <a className="hero-cue" href="#problem" aria-label="Scroll to the next section"><span /></a>
     </section>
   );

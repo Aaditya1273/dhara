@@ -12,7 +12,6 @@ export const Logo = () => (
 export const Thermo = ({ className }: P) => <svg {...svg} className={className}><path d="M12 3v11.2a3.5 3.5 0 1 0 2 0V3a1 1 0 0 0-2 0z" /><path d="M8 7h2M8 10h2" /></svg>;
 export const Sun = ({ className }: P) => <svg {...svg} className={className}><circle cx="12" cy="12" r="4" /><path d="M12 2.5V5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8" /></svg>;
 export const Drop = ({ className }: P) => <svg {...svg} className={className}><path d="M12 3s-6 7-6 11a6 6 0 0 0 12 0c0-4-6-11-6-11z" /></svg>;
-export const Alert = ({ className }: P) => <svg {...svg} className={className}><path d="M12 4 2.8 20h18.4zM12 10v4.5M12 17.2v.1" /></svg>;
 export const Check = ({ className }: P) => <svg {...svg} className={className} strokeWidth={2.4}><path d="m5 12.5 4.2 4.2L19 7" /></svg>;
 export const Camera = ({ className }: P) => <svg {...svg} className={className}><path d="M4 8h3l1.5-2h7L17 8h3v11H4z" /><circle cx="12" cy="13.5" r="3.2" /></svg>;
 export const Doc = ({ className }: P) => <svg {...svg} className={className}><path d="M7 3h7l4 4v14H7zM14 3v4h4M10 12h5M10 16h5" /></svg>;
