@@ -15,3 +15,6 @@ deploy/aws/iot/*.crt
 deploy/aws/iot/*.key
 deploy/aws/iot/cert.arn
 node_modules/
+deploy/aws/iot/*.token
+deploy/aws/iot/*.pem
+firmware/wokwi/*.local.ino

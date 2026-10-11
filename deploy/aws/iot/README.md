@@ -1,6 +1,10 @@
 # AWS IoT Core setup for DHARA tank probes
 
-**Status:** written and JSON-validated, **not yet run against a real AWS account**. Run it, then record the results in the main README.
+**Status:** run against a real AWS account (ap-south-1) on 11 Oct 2026 and verified end to end with a simulated device:
+a Wokwi ESP32 + DS18B20 (`firmware/wokwi/sketch_aws.ino`, thing `dhara-wokwi-01`) connected to AWS IoT Core with its X.509
+certificate and published every 20 s. The `dhara_forward` rule delivered the readings to the live DHARA ingest API (stored
+on the demo tank, source `dhara-wokwi-01`), and `dhara_archive` wrote one S3 object per message with the token removed.
+Not yet tested: a physical ESP32 and probe.
 
 ```
 ESP32 + DS18B20 ──MQTT/TLS (X.509)──▶ AWS IoT Core ──rule──▶ S3  dhara/iot-raw/…   (raw archive, no token)
@@ -47,8 +51,10 @@ sed "s/ACCOUNT_ID/$ACCOUNT_ID/; s/BUCKET/$BUCKET/" archive-rule.json > /tmp/arch
 aws iot create-topic-rule --rule-name dhara_archive --topic-rule-payload file:///tmp/archive.json
 aws iot create-topic-rule-destination --destination-configuration \
   "httpUrlConfiguration={confirmationUrl=https://$DHARA_HOST/api/sensors/ingest/}"
-#   DHARA logs "AWS IoT destination confirmation received … token XXX". Then confirm it:
+#   DHARA logs "AWS IoT destination confirmation received … token XXX". Then confirm it, and enable it
+#   (a confirmed destination starts DISABLED):
 #   aws iot confirm-topic-rule-destination --confirmation-token XXX
+#   aws iot update-topic-rule-destination --arn <destination arn> --status ENABLED
 sed "s/DHARA_HOST/$DHARA_HOST/" forward-rule.json > /tmp/forward.json
 aws iot create-topic-rule --rule-name dhara_forward --topic-rule-payload file:///tmp/forward.json
 ```
