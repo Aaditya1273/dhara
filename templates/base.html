@@ -1,13 +1,14 @@
 {% load static %}<!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="no-js">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#091d25">
   <title>{% block title %}DHARA{% endblock %} · DHARA</title>
   <meta name="description" content="{% block description %}DHARA connects tank-water measurements, heat context, testing priorities, maintenance evidence and follow-up for institutions.{% endblock %}">
-  <link rel="preload" href="{% static 'fonts/anek-latin-var.woff2' %}" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="{% static 'fonts/plex-sans-var.woff2' %}" as="font" type="font/woff2" crossorigin>
+  <script>document.documentElement.classList.replace('no-js', 'js');</script>
+  <link rel="preload" href="{% static 'fonts/manrope-var.woff2' %}" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="{% static 'fonts/instrument-serif-italic.woff2' %}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{% static 'css/tw.css' %}">
   <link rel="stylesheet" href="{% static 'css/style.css' %}">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23091d25'/%3E%3Cpath d='M16 6c0 0-7 8-7 13a7 7 0 0 0 14 0c0-5-7-13-7-13z' fill='%23c9f27a'/%3E%3C/svg%3E">
@@ -66,7 +67,7 @@
 {# ===================== Public site shell ===================== #}
 {% block site_header %}
 <header class="site-solid on-dark">
-  <div class="site-bar">
+  <div class="wrap site-bar">
     <a class="brand" href="{% if user.is_authenticated %}{% url 'select_company' %}{% else %}{% url 'landing_page' %}{% endif %}">{% include 'partials/logo.html' %}<span class="brand-word">DHARA</span></a>
     <nav class="site-nav" aria-label="Site">
       {% if user.is_authenticated %}
@@ -98,7 +99,7 @@
 </main>
 {% block site_footer %}
 <footer class="site-footer on-dark">
-  <div class="inner">
+  <div class="wrap inner">
     <div>
       <a class="brand" href="{% url 'landing_page' %}">{% include 'partials/logo.html' %}<span class="brand-word">DHARA</span></a>
       <p class="mt-3 max-w-md">Heat-aware water monitoring and an evidence ledger for institutional water tanks. A maintenance record or photograph alone does not certify that water is safe to drink.</p>

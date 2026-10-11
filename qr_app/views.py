@@ -73,6 +73,39 @@ class CompanyView(CompanyRequiredMixin, ActiveSubscriptionRequiredMixin, View):
 
 # --- Public pages ------------------------------------------------------------------------
 
+def priority_scenarios(now=None):
+    """Example situations run through the real rule engine (qr_app/priority.py) with the configured
+    thresholds, so the landing page shows exactly what DHARA would conclude. Inputs are illustrative."""
+    from types import SimpleNamespace
+    from datetime import date
+    from . import priority as prio, weather
+    now = now or timezone.now()
+    cfg = settings.DHARA_PRIORITY
+    tank = SimpleNamespace(placement='rooftop', shade='full_sun', sun_exposed=True)
+    def fc(max_c):
+        return weather.Forecast(available=True, daily_max_c=[(date.today(), max_c)])
+    def r(v, h):
+        return prio.Reading(v, now - timedelta(hours=h))
+    cases = [
+        ('fresh', 'Fresh reading, mild day', r(0.6, 6), r(24.0, 2), fc(31.0)),
+        ('ageing', 'Reading ageing in the heat', r(0.6, 30), r(31.4, 2), fc(41.0)),
+        ('below', 'Below the configured minimum', r(0.15, 3), r(33.0, 1), fc(39.0)),
+        ('none', 'No reading yet, hot forecast', None, None, fc(42.0)),
+    ]
+    out = []
+    for key, title, cl, wt, forecast in cases:
+        p = prio.evaluate(tank, cl, wt, forecast, cfg, now)
+        evidence = [
+            ('Free chlorine', f'{cl.value:.2f} mg/L, {prio.hours_old(cl, now):.0f} h old' if cl else 'No reading'),
+            ('Tank-water temperature', f'{wt.value:.1f} °C, {prio.hours_old(wt, now):.0f} h old' if wt else 'No reading'),
+            ('Forecast air, next days', f'max {forecast.max_next_days:.0f} °C (air)'),
+            ('Thermal profile', 'Rooftop, full sun'),
+        ]
+        out.append({'key': key, 'title': title, 'evidence': evidence, 'p': p,
+                    'due': {'urgent': 'today', 'high': 'tomorrow', 'medium': 'in 3 days', 'low': 'in 3 days'}.get(p.level)})
+    return out
+
+
 class LandingPageView(TemplateView):
     template_name = 'landing_page.html'
 
@@ -81,6 +114,8 @@ class LandingPageView(TemplateView):
         ctx = super().get_context_data(**kwargs)
         demo = Equipment.objects.filter(company__name=DEMO_INSTITUTION, tank_code='TANK-A').first()
         ctx['demo_qr_url'] = reverse('public_tank_status', args=[demo.public_token]) if demo else None
+        ctx['scenarios'] = priority_scenarios()
+        ctx['cfg'] = settings.DHARA_PRIORITY
         return ctx
 
 

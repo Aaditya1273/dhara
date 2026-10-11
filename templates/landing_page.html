@@ -1,236 +1,234 @@
-{% extends 'base.html' %}{% load static %}
-{% block title %}Heat-aware water monitoring for institutions{% endblock %}
+{% extends 'base.html' %}{% load static dhara %}
+{% block title %}Water deserves more than a record{% endblock %}
 {% block site_header %}{% endblock %}
 {% block site_content %}
 
-{# ---------------- 1. Hero ---------------- #}
+{# ================= HERO ================= #}
 <section class="hero on-dark" aria-labelledby="hero-title">
-  {% include 'partials/hero_contours.html' %}
-  <header class="site-header">
-    <div class="bar">
+  <header class="lp-header">
+    <div class="wrap site-bar">
       <a class="brand" href="{% url 'landing_page' %}">{% include 'partials/logo.html' %}<span class="brand-word">DHARA</span></a>
       <nav class="site-nav" aria-label="Site">
-        <a class="plain hidden sm:inline-flex" href="#how">How it works</a>
+        <a class="plain hidden lg:inline-flex" href="#priority">Testing priority</a>
+        <a class="plain hidden lg:inline-flex" href="#evidence">Evidence</a>
+        <a class="plain hidden lg:inline-flex" href="#workflow">How it works</a>
         {% if user.is_authenticated %}<a class="btn btn-primary btn-sm" href="{% url 'select_company' %}">Open dashboard</a>
-        {% else %}<a class="plain" href="{% url 'login' %}">Sign in</a>{% endif %}
+        {% else %}<a class="plain" href="{% url 'login' %}">Sign in</a><a class="btn btn-primary btn-sm hidden sm:inline-flex" href="{% url 'register' %}">Register institution</a>{% endif %}
       </nav>
     </div>
   </header>
-  <div class="hero-inner">
-    <div class="enter">
-      <p class="eyebrow" style="--i:0;color:#c9f27a">For hostels, schools and campuses</p>
-      <h1 id="hero-title" style="--i:0" class="mt-4">Water deserves more than a record.</h1>
+  <div class="wrap hero-grid">
+    <div class="hero-copy enter">
+      <p class="audience" style="--i:0">For hostels, schools and campuses</p>
+      <h1 id="hero-title" style="--i:0"><span>Water deserves</span> <span class="serif">more than a record.</span></h1>
       <p class="lede" style="--i:2">Measure changing water conditions, prioritise testing when it matters, and keep a traceable record of every response.</p>
       <div class="hero-actions" style="--i:3">
-        <a class="btn btn-primary" href="#demo">Explore DHARA</a>
-        <a class="btn btn-ghost" href="#how">See how it works</a>
+        <a class="btn btn-primary btn-lg" href="#priority">Explore DHARA <span class="arrow" aria-hidden="true">↓</span></a>
+        <a class="btn btn-ghost btn-lg" href="#workflow">See the workflow</a>
       </div>
     </div>
-    <aside class="hero-instrument enter" aria-label="Example of what DHARA shows for one tank">
-      <div style="--i:3">
-        <div class="flex items-start justify-between gap-3">
-          <div><span class="label">Tank-water temperature</span><p class="reading mt-2">31.4 °C</p></div>
-          <span class="badge badge-neutral">Example layout</span>
-        </div>
-        <p class="note">Measured by an in-tank probe, 14:20. Shown next to, never instead of, the forecast air temperature.</p>
-        <hr class="section-rule" style="border-color:#1a4250;margin:1rem 0">
-        <span class="label">Test priority</span>
-        <p class="mt-1 font-semibold text-white">Repeat measurement</p>
-        <p class="note">Why: latest free-chlorine reading is 30 h old and the tank sits in full sun during a hot forecast.</p>
-      </div>
-    </aside>
+    {% include 'partials/hero_panel.html' %}
   </div>
 </section>
 
-{# ---------------- 2. The problem ---------------- #}
+{# ================= A. THE PROBLEM ================= #}
 <section class="band" aria-labelledby="problem-title">
-  <div class="band-inner">
-    <div class="band-head reveal">
-      <h2 id="problem-title">One tank. Five places to look.</h2>
-      <p>The evidence that a tank was cleaned, tested and followed up usually exists. It is just scattered, so nobody can answer a simple question quickly.</p>
+  <div class="wrap problem">
+    <div class="sec-head reveal" style="margin-bottom:0">
+      <span class="sec-index">The problem</span>
+      <h2 id="problem-title">A cleaning record <span class="serif">can't see inside the tank.</span></h2>
+      <p>Registers say when someone cleaned. They don't say how warm the water is now, whether any chlorine is left, who checked the evidence, or what a laboratory found. In a hot summer, those are the questions that matter.</p>
     </div>
-    <div class="fragments">
-      <div class="fragment"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="8" y="5" width="24" height="30" rx="2"/><path d="M13 12h14M13 17h14M13 22h9"/></svg>
-        <h3>A paper register</h3><p>Cleaning dates written by hand, with no way to see which tank is overdue.</p></div>
-      <div class="fragment"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="11" y="4" width="18" height="32" rx="3"/><path d="M15 26l4-5 3 3 3-4" /></svg>
-        <h3>Photos on a phone</h3><p>Before-and-after pictures in someone's gallery, not attached to the record they support.</p></div>
-      <div class="fragment"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="20" cy="20" r="13"/><path d="M20 12v8l5 3"/></svg>
-        <h3>No temperature record</h3><p>Rooftop tanks heat up in summer, but the water temperature is almost never measured.</p></div>
-      <div class="fragment"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M15 5h10M17 5v10l-8 15a2 2 0 0 0 2 3h18a2 2 0 0 0 2-3l-8-15V5"/></svg>
-        <h3>A lab PDF</h3><p>Water-quality results arrive by email, separate from the maintenance they relate to.</p></div>
-      <div class="fragment"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M7 9h26v17H16l-7 6v-6H7z"/><path d="M13 15h14M13 20h8"/></svg>
-        <h3>A chat thread</h3><p>"Who is fixing Block B?" asked twice, answered once, never closed.</p></div>
-    </div>
-  </div>
-</section>
-
-{# ---------------- 3. Workflow ---------------- #}
-<section id="how" class="band band-dark on-dark curve-top" aria-labelledby="how-title">
-  <div class="band-inner">
-    <div class="band-head reveal">
-      <h2 id="how-title">From a reading to a resolved task.</h2>
-      <p>Every step leaves something a warden, an auditor or a student can check later.</p>
-    </div>
-    <div class="flow">
-      <svg class="flow-line reveal-draw" viewBox="0 0 1000 40" preserveAspectRatio="none" aria-hidden="true"><path d="M20 20 C 150 0, 250 40, 400 20 S 650 0, 800 20 S 950 40, 980 20"/></svg>
-      <div class="step"><span class="step-dot">1</span><h3>Measure</h3><p>A technician records tank-water temperature or free chlorine, or an in-tank probe sends readings.</p><p class="gives">You get: a timestamped reading with its method and source.</p></div>
-      <div class="step"><span class="step-dot">2</span><h3>Prioritise</h3><p>Rules compare reading age and values with your thresholds and the weather forecast.</p><p class="gives">You get: which tank to test next, and every reason why.</p></div>
-      <div class="step"><span class="step-dot">3</span><h3>Test</h3><p>Maintenance is submitted with before-and-after photos and documents from a phone.</p><p class="gives">You get: evidence fingerprinted with SHA-256.</p></div>
-      <div class="step"><span class="step-dot">4</span><h3>Review</h3><p>A warden who did not submit it accepts, rejects or asks for more evidence, with a reason.</p><p class="gives">You get: a named, timed review decision.</p></div>
-      <div class="step"><span class="step-dot">5</span><h3>Resolve</h3><p>Follow-ups are assigned, and closed only when someone records what was done.</p><p class="gives">You get: an audit trail and a public QR status page.</p></div>
-    </div>
-  </div>
-</section>
-
-{# ---------------- 4. Heat-aware intelligence ---------------- #}
-<section class="band band-river on-dark" aria-labelledby="heat-title">
-  <div class="band-inner">
-    <div class="band-head reveal">
-      <h2 id="heat-title">Five kinds of information. Never blended into one score.</h2>
-      <p>Heat speeds up the loss of chlorine in stored water. DHARA keeps what was measured, what was forecast and what was decided visibly apart.</p>
-    </div>
-    <div class="signal-grid">
-      <div class="chart-card">
-        <figure>
-          <figcaption class="flex flex-wrap items-baseline justify-between gap-2 mb-3">
-            <strong class="font-semibold">How a tank page draws temperature</strong>
-            <span class="badge badge-neutral">Illustration of the drawing rules, not measured data</span>
-          </figcaption>
-          <svg class="chart" viewBox="0 0 560 250" role="img" aria-label="Illustration: a solid line for measured tank water, a dotted line for forecast air temperature, and a dashed line with a shaded band for a validated tank forecast after the present moment.">
-            <line class="grid" x1="40" y1="40" x2="540" y2="40"/><line class="grid" x1="40" y1="110" x2="540" y2="110"/><line class="grid" x1="40" y1="180" x2="540" y2="180"/>
-            <line class="axis" x1="40" y1="215" x2="540" y2="215"/>
-            <text x="4" y="44">40°</text><text x="4" y="114">32°</text><text x="4" y="184">24°</text>
-            <path class="s-air" d="M40 165 C 90 150, 120 70, 165 62 S 230 150, 285 160 S 350 70, 395 58 S 470 150, 540 158"/>
-            <path class="s-water" d="M40 150 C 100 145, 140 112, 190 104 S 250 128, 300 134"/>
-            <path class="s-band" d="M300 124 C 350 104, 380 82, 420 80 S 500 108, 540 116 L540 146 C 500 138, 460 112, 420 110 S 350 132, 300 144 Z"/>
-            <path class="s-forecast" d="M300 134 C 350 118, 380 96, 420 95 S 500 123, 540 131"/>
-            <line class="now" x1="300" y1="30" x2="300" y2="215"/><text x="304" y="26">now</text>
-            <text x="168" y="54">air (forecast)</text>
-            <text x="96" y="168">tank water (measured)</text>
-            <text x="430" y="76">tank forecast</text>
-          </svg>
-          <div class="legend"><span><i class="water"></i>measured tank water</span><span><i class="forecast"></i>tank forecast (validated model)</span><span><i class="errband"></i>approximate error band</span><span><i class="air"></i>forecast air temperature</span></div>
-        </figure>
+    <div class="reveal" style="--i:1">
+      <div class="register" aria-label="Example of a paper register entry">
+        <span class="stamp">CLEANED</span>
+        <p class="hand">Tank A, Block A</p>
+        <p class="hand">12 March. Drained and scrubbed.</p>
+        <p class="hand" style="color:#5b6b78">Signed, maintenance team</p>
       </div>
-      <ul class="signal-list">
-        <li><strong><i style="border-color:#5fd0c5"></i>Measured tank-water temperature</strong><p>From a thermometer or an in-tank probe, with time, method and source.</p></li>
-        <li><strong><i style="border-color:#8fbcf0"></i>Recorded free-chlorine readings</strong><p>A residual at one point and moment. Not proof that water is drinkable.</p></li>
-        <li><strong><i style="border-color:#f0b46a;border-top-style:dotted"></i>Weather forecast</strong><p>Air temperature for your campus. Labelled as air, never shown as tank water.</p></li>
-        <li><strong><i style="border-color:#5fd0c5;border-top-style:dashed"></i>Model estimate, only after validation</strong><p>A tank's heat model is shown only if it predicts held-out days within your error limit.</p></li>
-        <li><strong><i style="border-color:#c9f27a"></i>Human decisions</strong><p>Reviews and resolutions carry a name, a time and a reason.</p></li>
+      <ul class="questions" aria-label="What the register cannot answer">
+        <li><strong>How warm is the water today?</strong><span>Rooftop tanks heat up; nobody measured.</span></li>
+        <li><strong>Is any free chlorine left?</strong><span>No reading, no time, no method.</span></li>
+        <li><strong>Did anyone check the evidence?</strong><span>Photos sit in a phone gallery.</span></li>
+        <li><strong>What did the lab report, and when?</strong><span>The PDF is in an email thread.</span></li>
       </ul>
     </div>
   </div>
 </section>
 
-{# ---------------- 5. Evidence ledger ---------------- #}
-<section class="band" aria-labelledby="ledger-title">
-  <div class="band-inner">
-    <div class="band-head reveal">
-      <h2 id="ledger-title">Two lanes of evidence that never merge.</h2>
-      <p>Accepting a cleaning does not change what a laboratory reported, and a lab report does not mark maintenance as done.</p>
+{# ================= B. FIVE LAYERS ================= #}
+<section class="band band-dark on-dark" aria-labelledby="layers-title">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="sec-index">One tank. Five places to look.</span>
+      <h2 id="layers-title">Measured, recorded, forecast, estimated, <span class="serif">decided.</span></h2>
+      <p>Each kind of information has its own source, its own drawing style and its own limits. DHARA never blends them into a single score.</p>
     </div>
-    <div class="ledger">
-      <div class="panel lane reveal">
-        <span class="lane-tag">Maintenance evidence</span>
-        <ol class="timeline mt-4">
-          <li><strong>Cleaning submitted</strong><span class="when">Claimed work date and the server's own submission time, kept separately</span></li>
-          <li><strong>Before and after photos attached</strong><span class="when">Each file stored privately with its SHA-256 digest</span></li>
-          <li><strong>Warden decision</strong><span class="when">Accept, reject or request more evidence, with a reason. Nobody reviews their own work</span></li>
-          <li><strong>Follow-up resolved</strong><span class="when">Closed only with resolution notes from a named person</span></li>
-        </ol>
+    <div class="layers">
+      <div class="layer-list" role="group" aria-label="Show one kind of information">
+        <button type="button" class="layer-btn" data-layer-btn="water" aria-pressed="false"><i class="swatch water" aria-hidden="true"></i><span><strong>Measured tank-water temperature</strong><span>Solid line, real readings</span></span></button>
+        <button type="button" class="layer-btn" data-layer-btn="chlorine" aria-pressed="false"><i class="swatch chlorine" aria-hidden="true"></i><span><strong>Recorded free chlorine</strong><span>Separate lane, single readings</span></span></button>
+        <button type="button" class="layer-btn" data-layer-btn="air" aria-pressed="false"><i class="swatch air" aria-hidden="true"></i><span><strong>Weather forecast</strong><span>Dotted, outside the tank</span></span></button>
+        <button type="button" class="layer-btn" data-layer-btn="model" aria-pressed="false"><i class="swatch model" aria-hidden="true"></i><span><strong>Model estimate</strong><span>Dashed with a band, only when validated</span></span></button>
+        <button type="button" class="layer-btn" data-layer-btn="human" aria-pressed="false"><i class="swatch human" aria-hidden="true"></i><span><strong>Human decisions</strong><span>Named, timed, with a reason</span></span></button>
       </div>
-      <div class="panel lane-quality reveal">
-        <span class="lane-tag quality">Water-quality evidence</span>
-        <ol class="timeline mt-4">
-          <li><strong>Laboratory report linked</strong><span class="when">Sample date, parameters and results exactly as the report states</span></li>
-          <li><strong>Original file kept</strong><span class="when">Stored unchanged with its digest</span></li>
-          <li><strong>Institution review</strong><span class="when">Marked reviewed by a warden. Still not an independent verification</span></li>
-          <li><strong>Gaps shown plainly</strong><span class="when">"No water-quality report linked." A missing report is never described as contamination</span></li>
-        </ol>
-      </div>
-    </div>
-  </div>
-</section>
-
-{# ---------------- 6. Product demonstration ---------------- #}
-<section id="demo" class="band band-dark on-dark" aria-labelledby="demo-title">
-  <div class="band-inner">
-    <div class="band-head reveal">
-      <h2 id="demo-title">Walk through one tank.</h2>
-      <p>These panels use DHARA's real components with demonstration content.{% if demo_qr_url %} The public page at the end is live.{% endif %}</p>
-    </div>
-    <div class="demo-tabs" role="tablist" aria-label="Product demonstration">
-      <button role="tab" id="t1" aria-controls="p1" aria-selected="true">Tank record</button>
-      <button role="tab" id="t2" aria-controls="p2" aria-selected="false" tabindex="-1">Measurements</button>
-      <button role="tab" id="t3" aria-controls="p3" aria-selected="false" tabindex="-1">Test priority</button>
-      <button role="tab" id="t4" aria-controls="p4" aria-selected="false" tabindex="-1">Maintenance</button>
-      <button role="tab" id="t5" aria-controls="p5" aria-selected="false" tabindex="-1">Review</button>
-      <button role="tab" id="t6" aria-controls="p6" aria-selected="false" tabindex="-1">Public QR page</button>
-    </div>
-    <div class="demo-stage">
-      <span class="badge badge-neutral fixture-tag">Demonstration content</span>
-      <div role="tabpanel" id="p1" aria-labelledby="t1">
-        <p class="mono muted">TANK-A</p><h3 class="text-2xl mt-1">Overhead tank, Block A</h3>
-        <div class="flex flex-wrap gap-2 mt-3"><span class="badge badge-good">Schedule up to date</span><span class="badge badge-warn">Water-quality report missing</span></div>
-        <dl class="kv mt-5 max-w-lg"><div><dt>Maintenance interval</dt><dd>every 180 days</dd></div><div><dt>Placement</dt><dd>Rooftop, full sun</dd></div><div><dt>Responsible</dt><dd>Technician account</dd></div></dl>
-      </div>
-      <div role="tabpanel" id="p2" aria-labelledby="t2">
-        <h3 class="text-xl">Field measurements</h3><p class="muted text-sm mt-1">Readings taken at the tank. Not laboratory results.</p>
-        <div class="table-wrap mt-4"><table class="table"><thead><tr><th>Measured</th><th>Measurement</th><th class="num">Value</th><th>Method</th></tr></thead>
-          <tbody><tr><td>14:20</td><td>Tank water temperature</td><td class="num">31.4 °C</td><td>Probe</td></tr><tr><td>Yesterday 08:10</td><td>Free residual chlorine</td><td class="num">0.30 mg/L</td><td>DPD strip, photo attached</td></tr></tbody></table></div>
-      </div>
-      <div role="tabpanel" id="p3" aria-labelledby="t3">
-        <div class="flex flex-wrap items-center gap-3"><span class="badge badge-warn">High</span><strong>Repeat measurement</strong></div>
-        <ul class="mt-4 grid gap-2 text-sm"><li>Latest free chlorine 0.30 mg/L is within 0.1 mg/L of the configured minimum (0.2 mg/L, IS 10500).</li>
-          <li class="muted">Forecast maximum air temperature 41 °C in the next days. This is air, not tank water.</li><li class="muted">Thermal profile: above ground in full sun.</li></ul>
-        <p class="text-sm mt-4">A follow-up is opened for the responsible person. Nobody is told to treat the tank automatically.</p>
-      </div>
-      <div role="tabpanel" id="p4" aria-labelledby="t4">
-        <h3 class="text-xl">Record maintenance</h3>
-        <div class="grid sm:grid-cols-2 gap-4 mt-4 max-w-2xl"><div class="inset"><span class="label">Event</span>Cleaning</div><div class="inset"><span class="label">Claimed work date</span>Today</div>
-          <div class="inset"><span class="label">Before photo</span>1 image, 2.1 MB</div><div class="inset"><span class="label">After photo</span>1 image, 1.8 MB</div></div>
-        <p class="text-sm mt-4">After submitting, the event shows <span class="badge badge-info">Pending review</span> until a warden decides.</p>
-      </div>
-      <div role="tabpanel" id="p5" aria-labelledby="t5">
-        <h3 class="text-xl">Warden review</h3>
-        <div class="grid gap-2 mt-4 max-w-md text-sm"><label class="inset flex gap-3 items-center"><input type="radio" name="demo-r" checked disabled> Accept</label><label class="inset flex gap-3 items-center"><input type="radio" name="demo-r" disabled> Request more evidence</label><label class="inset flex gap-3 items-center"><input type="radio" name="demo-r" disabled> Reject</label></div>
-        <p class="text-sm mt-4">A reason is required to reject or request changes. The submitter cannot review their own event, and an event without evidence cannot be accepted.</p>
-      </div>
-      <div role="tabpanel" id="p6" aria-labelledby="t6">
-        <h3 class="text-xl">What anyone sees after scanning the tank's QR code</h3>
-        <div class="disclaimer mt-4 max-w-xl">DHARA displays recorded maintenance and water-quality documentation. A maintenance record or photograph alone does not certify that the water is safe to drink.</div>
-        <p class="text-sm mt-4">No names, notes, files or internal locations are shown.</p>
-        {% if demo_qr_url %}<a class="btn btn-primary mt-5" href="{{ demo_qr_url }}">Open the live demo tank page</a>{% endif %}
+      <div class="layer-stage reveal" style="--i:1" data-layer-stage>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3"><strong class="text-white text-sm">One tank over five days</strong><span class="badge badge-neutral">Illustration, not measured data</span></div>
+        <svg class="layer-svg" viewBox="0 0 640 330" role="img" aria-label="Illustration: forecast air temperature in a band above the tank; measured tank water as a solid line up to now, then a dashed estimate with a band; free-chlorine readings in their own lane; review and resolution markers along the bottom.">
+          <text x="0" y="14">Outside the tank</text>
+          <line x1="0" y1="112" x2="640" y2="112" stroke="#1b3e49"/>
+          <text x="0" y="132">Inside the tank</text>
+          <line x1="0" y1="226" x2="640" y2="226" stroke="#1b3e49"/>
+          <text x="0" y="246">Free chlorine, own lane</text>
+          <line x1="0" y1="282" x2="640" y2="282" stroke="#1b3e49"/>
+          <line x1="420" y1="20" x2="420" y2="312" stroke="#6c7b80" stroke-dasharray="2 4"/><text x="426" y="30">now</text>
+          <g class="lyr lyr-air"><path d="M20 92 C 70 82, 95 38, 140 34 S 210 88, 260 92 S 330 40, 380 32 S 460 86, 520 90 S 590 44, 630 38" fill="none" stroke="#f0b46a" stroke-width="2" stroke-dasharray="1 6" stroke-linecap="round"/>
+            <text x="150" y="28">air (forecast)</text></g>
+          <g class="lyr lyr-water"><path d="M20 196 C 70 192, 100 168, 140 164 S 210 186, 260 188 S 330 162, 380 158 S 405 166, 420 170" fill="none" stroke="#3fc3b6" stroke-width="2.5"/>
+            <g fill="#3fc3b6"><circle cx="60" cy="193" r="3.5"/><circle cx="140" cy="164" r="3.5"/><circle cx="220" cy="182" r="3.5"/><circle cx="300" cy="180" r="3.5"/><circle cx="380" cy="158" r="3.5"/></g>
+            <text x="40" y="214">tank water (measured)</text></g>
+          <g class="lyr lyr-model"><path d="M420 160 C 460 146, 490 144, 520 152 S 590 170, 630 160 L630 186 C 590 196, 550 178, 520 176 S 460 172, 420 180 Z" fill="#3fc3b6" fill-opacity=".14"/>
+            <path d="M420 170 C 460 158, 490 156, 520 164 S 590 182, 630 172" fill="none" stroke="#3fc3b6" stroke-width="2" stroke-dasharray="7 5"/>
+            <text x="470" y="140">estimate, if validated</text></g>
+          <g class="lyr lyr-chlorine"><g fill="#78b0ec"><path d="M70 258 l6 6 -6 6 -6 -6z"/><path d="M200 262 l6 6 -6 6 -6 -6z"/><path d="M330 266 l6 6 -6 6 -6 -6z"/></g>
+            <text x="82" y="270">0.60</text><text x="212" y="274">0.45</text><text x="342" y="278">0.30 mg/L</text></g>
+          <g class="lyr lyr-human"><rect x="150" y="290" width="4" height="22" fill="#c9f27a"/><text x="160" y="306">Reviewed</text>
+            <rect x="560" y="290" width="4" height="22" fill="#c9f27a"/><text x="570" y="306">Resolved</text></g>
+        </svg>
+        <div class="layer-explain" aria-live="polite">
+          <div data-layer="all" class="is-on"><b>Five kinds, five drawing styles</b>Choose a layer to see its source and limits. Solid means measured. Dotted means forecast. Dashed means estimated.</div>
+          <div data-layer="water"><b>Source</b>Thermometer or in-tank probe, with time and method.</div>
+          <div data-layer="water"><b>Can tell you</b>How warm the stored water was, at that point and time.</div>
+          <div data-layer="water"><b>Cannot</b>Say whether the water is safe to drink.</div>
+          <div data-layer="chlorine"><b>Source</b>DPD strip, comparator or meter, optionally with a photo.</div>
+          <div data-layer="chlorine"><b>Can tell you</b>The disinfectant residual at one moment and point.</div>
+          <div data-layer="chlorine"><b>Cannot</b>Prove potability or describe the whole tank.</div>
+          <div data-layer="air"><b>Source</b>A public weather forecast for the campus location.</div>
+          <div data-layer="air"><b>Can tell you</b>Whether hot days are coming, as context.</div>
+          <div data-layer="air"><b>Cannot</b>Stand in for tank-water temperature.</div>
+          <div data-layer="model"><b>Source</b>A heat-balance model fitted to this tank's own readings.</div>
+          <div data-layer="model"><b>Can tell you</b>An estimate with an error band, only after held-out validation.</div>
+          <div data-layer="model"><b>Cannot</b>Be shown beyond the horizon it was validated for.</div>
+          <div data-layer="human"><b>Source</b>Wardens and technicians, by name.</div>
+          <div data-layer="human"><b>Can tell you</b>Who accepted, rejected or resolved what, when and why.</div>
+          <div data-layer="human"><b>Cannot</b>Independently verify the physical work.</div>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-{# ---------------- 7. Trust and transparency ---------------- #}
-<section class="band" aria-labelledby="trust-title">
-  <div class="band-inner grid gap-8 lg:grid-cols-2">
-    <div class="band-head mb-0 reveal">
-      <h2 id="trust-title">What DHARA can and cannot tell you.</h2>
-      <p>Honest limits are part of the product.</p>
+{# ================= C. TESTING PRIORITY ================= #}
+<section id="priority" class="band curve-in" aria-labelledby="priority-title">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="sec-index">Heat-aware testing priority</span>
+      <h2 id="priority-title">From evidence to <span class="serif">the next measurement.</span></h2>
+      <p>Choose a situation. The outcome is produced by DHARA's own rule engine with its configured thresholds. It is a suggestion to measure or review, never a diagnosis.</p>
     </div>
-    <div class="grid gap-4 sm:grid-cols-2">
-      <div class="panel panel-pad"><h3 class="text-lg">Recorded</h3>
-        <ul class="mt-3 grid gap-2 text-sm"><li>What was measured, and how</li><li>When it was measured, and when it was entered</li><li>Who submitted each record</li><li>What a warden reviewed, and why</li><li>Which lab documents exist</li><li>Which actions are still open</li></ul></div>
-      <div class="panel panel-pad"><h3 class="text-lg">Not claimed</h3>
-        <ul class="mt-3 grid gap-2 text-sm muted"><li>That water is safe to drink</li><li>That a photo is genuine or shows this tank</li><li>That a lab report covers more than its sample</li><li>That a forecast is a measurement</li><li>That the audit log is tamper-proof</li></ul></div>
+    <div class="scenario-tabs" role="tablist" aria-label="Example situations">
+      {% for s in scenarios %}<button role="tab" id="sc-t-{{ s.key }}" aria-controls="sc-p-{{ s.key }}" aria-selected="{% if forloop.counter == 2 %}true{% else %}false{% endif %}"{% if forloop.counter != 2 %} tabindex="-1"{% endif %}>{{ s.title }}</button>{% endfor %}
+    </div>
+    {% for s in scenarios %}
+    <div class="scenario-panel" role="tabpanel" id="sc-p-{{ s.key }}" aria-labelledby="sc-t-{{ s.key }}">
+      <div class="pipeline">
+        <div class="pipe"><h3>Evidence</h3>{% for k, v in s.evidence %}<div class="evidence-row"><span class="muted">{{ k }}</span><span>{{ v }}</span></div>{% endfor %}</div>
+        <div class="pipe-arrow" aria-hidden="true"><svg viewBox="0 0 34 34" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 17h20M19 10l7 7-7 7"/></svg></div>
+        <div class="pipe"><h3>Rules that fired</h3>
+          <ul class="rules">{% for r in s.p.reasons %}<li>{{ r }}</li>{% empty %}<li>No rule fired: fresh readings inside the configured thresholds.</li>{% endfor %}
+            {% for c in s.p.context %}<li class="ctx">{{ c }}</li>{% endfor %}</ul></div>
+        <div class="pipe-arrow" aria-hidden="true"><svg viewBox="0 0 34 34" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 17h20M19 10l7 7-7 7"/></svg></div>
+        <div class="pipe outcome lvl-{{ s.p.level }}"><h3>Suggested next action</h3>
+          {% badge 'priority' s.p.level %}
+          <p class="action">{{ s.p.action_label }}</p>
+          <p class="text-sm muted">{% if s.p.actionable %}DHARA opens one follow-up for the tank's responsible person, due {{ s.due }}. A person records the result.{% else %}No follow-up is opened.{% endif %}</p>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    <p class="engine-note">Thresholds used: free chlorine minimum {{ cfg.CHLORINE_MIN_MG_L }} mg/L (IS 10500:2012), stale after {{ cfg.CHLORINE_MAX_AGE_HOURS|floatformat:0 }} h, warm water from {{ cfg.WATER_WARM_C }} °C, hot forecast from {{ cfg.FORECAST_HOT_C }} °C. Each institution can change them. The situations are illustrative inputs.</p>
+  </div>
+</section>
+
+{# ================= D. TWO LANES ================= #}
+<section id="evidence" class="band band-dark on-dark" aria-labelledby="lanes-title">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="sec-index">Two lanes of evidence</span>
+      <h2 id="lanes-title">Connected by accountability. <span class="serif">Never merged.</span></h2>
+      <p>A completed repair or a clean photograph is not proof of potable water. DHARA keeps maintenance evidence and water-quality observations apart, and lets both end in one audit trail.</p>
+    </div>
+    <div class="lanes">
+      <div class="lane-row m reveal">
+        <div class="lane-title">Maintenance evidence<small>What work was done, and who checked it</small></div>
+        <div class="node"><span class="dot">1</span><h3>Work submitted</h3><p>Claimed work date and the server's own submission time, kept separately.</p></div>
+        <div class="node"><span class="dot">2</span><h3>Photos and documents</h3><p>Stored privately, each with a SHA-256 fingerprint.</p></div>
+        <div class="node"><span class="dot">3</span><h3>Warden decision</h3><p>Accept, reject or ask for more, with a reason. Never by the submitter.</p></div>
+        <div class="node"><span class="dot">4</span><h3>Correction, not edit</h3><p>Reviewed events stay unchanged; a correction is a new event.</p></div>
+      </div>
+      <p class="divider reveal">The lanes never merge</p>
+      <div class="lane-row q reveal">
+        <div class="lane-title">Water-quality observations<small>What was measured, how and by whom</small></div>
+        <div class="node"><span class="dot">1</span><h3>Field reading</h3><p>Temperature or free chlorine with method, time and source: a person or a probe.</p></div>
+        <div class="node"><span class="dot">2</span><h3>Strip photo</h3><p>Optional evidence image with its own digest.</p></div>
+        <div class="node"><span class="dot">3</span><h3>Laboratory report</h3><p>Sample date and parameters exactly as the report states.</p></div>
+        <div class="node"><span class="dot">4</span><h3>Institution review</h3><p>Marked reviewed by a warden. Still not independent verification.</p></div>
+      </div>
+      <div class="audit-end reveal">
+        <div><strong>Both lanes end in one audit trail</strong><p>Every entry records who acted, what changed and the server time. An ordinary log without edit screens, not a tamper-proof ledger.</p></div>
+        <a class="btn btn-ghost" href="#workflow">See the workflow</a>
+      </div>
     </div>
   </div>
 </section>
 
-{# ---------------- 8. Closing ---------------- #}
+{# ================= E. WORKFLOW (sticky story) ================= #}
+<section id="workflow" class="band curve-in" aria-labelledby="workflow-title">
+  <div class="wrap story">
+    <div class="story-aside sec-head" style="margin-bottom:0">
+      <span class="sec-index">From observation to resolution</span>
+      <h2 id="workflow-title">Six steps. <span class="serif">Each one leaves a trace.</span></h2>
+      <p>Every step produces something a warden, an auditor or a student can check later.</p>
+      <div class="story-progress" aria-hidden="true"><div><span data-story-bar></span></div><p data-story-label>Step 1 of 6: Measure</p></div>
+    </div>
+    <ol class="steps">
+      <li class="step is-active" data-step="Measure"><span class="num">1</span><h3>Measure</h3><p>A technician records tank-water temperature or free chlorine from a phone, or an in-tank probe sends readings through AWS IoT Core.</p><div class="keeps"><span class="badge badge-info">probe</span> reading, method, source and time</div></li>
+      <li class="step" data-step="Prioritise"><span class="num">2</span><h3>Prioritise</h3><p>Rules compare reading age and values with your thresholds and the weather forecast, and explain every reason.</p><div class="keeps">{% badge 'priority' 'high' %} with the rules that fired</div></li>
+      <li class="step" data-step="Record evidence"><span class="num">3</span><h3>Record evidence</h3><p>Maintenance is submitted with before-and-after photos and documents. Files are validated on the server and fingerprinted.</p><div class="keeps">{% badge 'evidence' 'attached' %} with SHA-256 digests</div></li>
+      <li class="step" data-step="Review"><span class="num">4</span><h3>Review</h3><p>A warden who did not submit the work accepts it, rejects it or asks for more evidence, with a reason.</p><div class="keeps">{% badge 'review' 'pending' %} then {% badge 'review' 'accepted' %}</div></li>
+      <li class="step" data-step="Follow up"><span class="num">5</span><h3>Follow up</h3><p>Unmet schedules, missing reports and reviewer requests open follow-ups for the responsible person.</p><div class="keeps">{% badge 'task' 'open' %} assigned, with a due date</div></li>
+      <li class="step" data-step="Verify resolution"><span class="num">6</span><h3>Verify resolution</h3><p>A task closes only when someone records what was done. The public QR page shows the outcome without private details.</p><div class="keeps">{% badge 'task' 'resolved' %} with notes and a name</div></li>
+    </ol>
+  </div>
+</section>
+
+{# ================= F. TRUST ================= #}
+<section class="band band-sand" aria-labelledby="trust-title">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="sec-index">Trust and transparency</span>
+      <h2 id="trust-title">Clear about what it knows, <span class="serif">and what it doesn't.</span></h2>
+    </div>
+    <div class="trust">
+      <div class="reveal"><h3>Recorded</h3><ul><li>What was measured, and the method</li><li>When it was measured and when entered</li><li>Who submitted it, or which probe</li><li>Which lab documents exist</li></ul></div>
+      <div class="reveal" style="--i:1"><h3>Reviewed by</h3><ul><li>Wardens of that institution only</li><li>Never the person who submitted</li><li>With a reason for rejections</li><li>Roles that apply per institution</li></ul></div>
+      <div class="reveal" style="--i:2"><h3>Traceable</h3><ul><li>SHA-256 for every evidence file</li><li>Re-check a digest at any time</li><li>Corrections as new events</li><li>An activity log of every action</li></ul></div>
+      <div class="not reveal" style="--i:3"><h3>Not claimed</h3><ul><li>That water is safe to drink</li><li>That a photo is genuine</li><li>That a forecast is a measurement</li><li>That the log is tamper-proof</li></ul></div>
+    </div>
+  </div>
+</section>
+
+{# ================= G. CLOSING ================= #}
 <section class="closing on-dark" aria-labelledby="close-title">
-  <div class="band-inner">
-    <h2 id="close-title">Start with one tank.</h2>
-    <p class="lede mt-4" style="color:#b9cbc9">Register your institution, add a tank and print its QR code. The first measurement takes a minute.</p>
-    <div class="hero-actions">
-      {% if user.is_authenticated %}<a class="btn btn-primary" href="{% url 'select_company' %}">Open dashboard</a>
-      {% else %}<a class="btn btn-primary" href="{% url 'register' %}">Register your institution</a><a class="btn btn-ghost" href="{% url 'login' %}">Sign in</a>{% endif %}
+  <div class="wrap">
+    <div class="reveal">
+      <h2 id="close-title">Start with <span class="serif">one tank.</span></h2>
+      <p class="lede mt-5" style="color:#b8cac7">Register your institution, add a tank, print its QR code and record the first measurement. It takes a few minutes.</p>
+      <div class="hero-actions">
+        {% if user.is_authenticated %}<a class="btn btn-primary btn-lg" href="{% url 'select_company' %}">Open dashboard</a>
+        {% else %}<a class="btn btn-primary btn-lg" href="{% url 'register' %}">Register your institution</a><a class="btn btn-ghost btn-lg" href="{% url 'login' %}">Sign in</a>{% endif %}
+        {% if demo_qr_url %}<a class="btn btn-ghost btn-lg" href="{{ demo_qr_url }}">See a live tank page</a>{% endif %}
+      </div>
     </div>
   </div>
 </section>

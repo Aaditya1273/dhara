@@ -1,0 +1,30 @@
+{% comment %}Hero visual: the product itself, laid out the way a tank page shows it. Every value is illustrative demo data and is labelled as such.{% endcomment %}
+<figure class="hero-panel" aria-labelledby="hp-cap">
+  <figcaption id="hp-cap" class="sr-only">Example tank page with demo data. Tank water measured at 31.4 °C by an in-tank probe 18 minutes ago. Free chlorine recorded at 0.30 mg/L, 30 hours old. Forecast air temperature 41 °C. DHARA suggests a medium-priority repeat chlorine measurement.</figcaption>
+  <div class="hp-head">
+    <div>
+      <span class="hp-title">Tank A, Block A</span>
+      <span class="hp-sub">Rooftop, full sun</span>
+    </div>
+    <span class="demo-flag">Illustrative demo data</span>
+  </div>
+  <dl class="hp-rows">
+    <div class="hp-row water">
+      <dt>Tank water<span>Measured, in-tank probe at 14:20</span></dt>
+      <dd><span class="hp-v">31.4<small>°C</small></span><span class="badge badge-good">Fresh, 18 min</span></dd>
+    </div>
+    <div class="hp-row chlorine">
+      <dt>Free chlorine<span>Recorded, DPD strip yesterday 08:10</span></dt>
+      <dd><span class="hp-v">0.30<small>mg/L</small></span><span class="badge badge-warn">30 h old</span></dd>
+    </div>
+    <div class="hp-row air">
+      <dt>Air, today<span>Weather forecast. Air, not tank water.</span></dt>
+      <dd><span class="hp-v">41<small>°C</small></span><span class="badge badge-neutral">Forecast</span></dd>
+    </div>
+  </dl>
+  <div class="hp-result">
+    <div class="row"><span class="label">Test priority</span><span class="badge badge-info">Medium</span></div>
+    <p class="hp-action">Repeat the chlorine measurement</p>
+    <ul><li>Latest reading is 30 h old; DHARA re-tests after 24 h in heat</li><li>Tank water at or above 25 °C, hot forecast</li></ul>
+  </div>
+</figure>

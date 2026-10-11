@@ -1010,14 +1010,15 @@ class ObservationPhotoAndInterventionTests(DharaTestCase):
 class InterfaceTests(DharaTestCase):
     def test_landing_links_live_demo_qr_only_when_demo_exists(self):
         r = self.client.get('/')
-        self.assertContains(r, 'Water deserves more than a record.')
+        self.assertContains(r, '<title>Water deserves more than a record')
         self.assertIsNone(r.context['demo_qr_url'])
         from .management.commands.seed_demo import DEMO_INSTITUTION
         demo = Company.objects.create(name=DEMO_INSTITUTION)
         t = Equipment.objects.create(company=demo, tank_code='TANK-A', name='Demo', maintenance_interval_days=30)
         r = self.client.get('/')
         self.assertEqual(r.context['demo_qr_url'], reverse('public_tank_status', args=[t.public_token]))
-        self.assertContains(r, 'Illustration of the drawing rules, not measured data')
+        self.assertContains(r, 'Illustration, not measured data')
+        self.assertContains(r, 'Illustrative demo data')
 
     def test_series_chart_requires_two_points_and_draws_threshold(self):
         from .views import series_chart
@@ -1055,6 +1056,6 @@ class InterfaceTests(DharaTestCase):
         html = r.content.decode()
         self.assertNotIn('cdn.tailwindcss.com', html)
         self.assertNotIn('alpinejs', html)
-        for path in ('css/tw.css', 'css/style.css', 'js/dhara.js', 'fonts/anek-latin-var.woff2'):
+        for path in ('css/tw.css', 'css/style.css', 'js/dhara.js', 'fonts/manrope-var.woff2', 'fonts/instrument-serif-italic.woff2'):
             from django.contrib.staticfiles import finders
             self.assertIsNotNone(finders.find(path), path)
