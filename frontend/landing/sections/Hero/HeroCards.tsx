@@ -10,8 +10,16 @@ type Depth = { depth: boolean; scroll: MotionValue<number>; px: MotionValue<numb
 function Float({ z, delay, className, children, ...m }: Depth & { z: number; delay: number; className: string; children: ReactNode }) {
   const y = useTransform([m.scroll, m.py], ([s, p]: number[]) => -s * 260 * z + p * 12 * z);
   const x = useTransform(m.px, (p) => p * 14 * z);
+  // Move the glass highlight to where the pointer is over the card.
+  const sheen = (e: React.PointerEvent<HTMLDivElement>) => {
+    const card = e.currentTarget.querySelector<HTMLElement>('.mcard');
+    if (!card) return;
+    const r = card.getBoundingClientRect();
+    card.style.setProperty('--mx', `${((e.clientX - r.left) / r.width) * 100}%`);
+    card.style.setProperty('--my', `${((e.clientY - r.top) / r.height) * 100}%`);
+  };
   return (
-    <motion.div className={`hs ${className}`} style={m.depth ? { x, y } : undefined}>
+    <motion.div className={`hs ${className}`} style={m.depth ? { x, y } : undefined} onPointerMove={sheen}>
       <motion.div initial={{ opacity: 0, y: 32, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.9, delay, ease: [0.16, 1, 0.3, 1] }}>
         {children}
