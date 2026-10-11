@@ -1,0 +1,472 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>DHARA film</title>
+<style>
+@font-face { font-family: 'Inter'; src: url('../static/fonts/inter-var.woff2') format('woff2'); font-weight: 100 900; }
+@font-face { font-family: 'Serif'; src: url('../static/fonts/instrument-serif.woff2') format('woff2'); }
+@font-face { font-family: 'Mono'; src: url('../static/fonts/plex-mono-400.woff2') format('woff2'); }
+html, body { margin: 0; background: #000; }
+canvas { display: block; }
+</style></head>
+<body><canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// Every frame is a pure function of time: seek(t) draws the whole film at t seconds.
+const W = 1920, H = 1080, cv = document.getElementById('c'), g = cv.getContext('2d');
+const C = { blue: '#0866F5', sky: '#3B82F6', light: '#93C5FD', pale: '#EAF3FF', navy: '#0B1222', ink: '#04070C',
+  white: '#FFFFFF', muted: '#94A3B8', dim: '#64748B', teal: '#14B8A6', heat: '#F59E0B', red: '#EF4444', paper: '#FBF7EC' };
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const eio = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const eout = (t) => 1 - Math.pow(1 - t, 3);
+const eout5 = (t) => 1 - Math.pow(1 - t, 5);
+const ein = (t) => t * t * t;
+function spring(t, w = 16, z = 0.72) { if (t <= 0) return 0; const wd = w * Math.sqrt(1 - z * z); return 1 - Math.exp(-z * w * t) * (Math.cos(wd * t) + (z * w / wd) * Math.sin(wd * t)); }
+function rng(seed) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+// ---------- assets ----------
+const IMG = {};
+const WOKWI = [];
+function load(name, src) { return new Promise((res) => { const i = new Image(); i.onload = () => { IMG[name] = i; res(); }; i.onerror = () => res(); i.src = src; }); }
+window.ready = (async () => {
+  const P = 'cap/product/';
+  const names = ['t2_form0', 't2_type1', 't2_type2', 't2_type3', 't2_type4', 'w1_dashboard', 'w2_priority', 'w3_tank', 'w35_queue', 'w4_event', 'p1_public'];
+  const jobs = names.map((n) => load(n, P + n + '.jpg'));
+  jobs.push(load('hero', '../static/img/hero-1672.webp'));
+  const wk = await fetch('cap/wokwi/list.json').then((r) => r.json());
+  wk.forEach((f) => { const ms = parseInt(f.slice(2, 8), 10); WOKWI.push({ ms, name: 'wk' + ms }); jobs.push(load('wk' + ms, 'cap/wokwi/' + f)); });
+  window.PROOF = await fetch('cap/proof.json').then((r) => r.json());
+  await Promise.all(jobs);
+  await document.fonts.load('600 40px Inter'); await document.fonts.load('40px Serif'); await document.fonts.load('20px Mono');
+  return true;
+})();
+
+// ---------- drawing helpers ----------
+function font(size, weight = 600, fam = 'Inter') { g.font = `${weight} ${size}px ${fam === 'Inter' ? 'Inter' : fam}`; }
+function text(s, x, y, { size = 40, weight = 600, fam = 'Inter', color = C.white, align = 'left', alpha = 1, ls = 0, base = 'alphabetic' } = {}) {
+  if (alpha <= 0) return; g.save(); g.globalAlpha *= alpha; font(size, weight, fam); g.fillStyle = color; g.textAlign = align; g.textBaseline = base;
+  g.letterSpacing = ls + 'px'; g.fillText(s, x, y); g.restore();
+}
+// Words rise out of a mask line, one after another.
+function rise(s, x, y, t, { size = 72, weight = 650, fam = 'Inter', color = C.white, align = 'left', stagger = 0.07, dur = 0.7, ls = -1, colors = null } = {}) {
+  font(size, weight, fam); g.letterSpacing = ls + 'px';
+  const words = s.split(' '), sp = g.measureText(' ').width, ws = words.map((w) => g.measureText(w).width);
+  const total = ws.reduce((a, b) => a + b, 0) + sp * (words.length - 1);
+  let cx = align === 'center' ? x - total / 2 : align === 'right' ? x - total : x;
+  words.forEach((w, i) => {
+    const p = eout5(prog(t, i * stagger, i * stagger + dur));
+    if (p > 0) {
+      g.save(); g.beginPath(); g.rect(cx - 10, y - size * 1.05, ws[i] + 20, size * 1.35); g.clip();
+      text(w, cx, y + (1 - p) * size * 1.1, { size, weight, fam, color: colors ? colors[i] || color : color, ls, alpha: clamp(p * 1.4) });
+      g.restore();
+    }
+    cx += ws[i] + sp;
+  });
+}
+function rr(x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+function dropPath(cx, cy, r, stretch = 1) {
+  g.beginPath(); const top = cy - r * 2.1 * stretch;
+  g.moveTo(cx, top);
+  g.bezierCurveTo(cx + r * 0.25, top + r * 0.9 * stretch, cx + r, cy - r * 0.55, cx + r, cy);
+  g.arc(cx, cy, r, 0, Math.PI, false);
+  g.bezierCurveTo(cx - r, cy - r * 0.55, cx - r * 0.25, top + r * 0.9 * stretch, cx, top);
+  g.closePath();
+}
+function drawDrop(cx, cy, r, stretch = 1, alpha = 1) {
+  g.save(); g.globalAlpha = alpha; dropPath(cx, cy, r, stretch);
+  const gr = g.createLinearGradient(cx - r, cy - r * 2, cx + r, cy + r); gr.addColorStop(0, '#9CC8FF'); gr.addColorStop(0.5, C.blue); gr.addColorStop(1, '#0646B8');
+  g.fillStyle = gr; g.fill();
+  g.beginPath(); g.ellipse(cx - r * 0.38, cy - r * 0.15, r * 0.16, r * 0.34, -0.4, 0, Math.PI * 2); g.fillStyle = 'rgba(255,255,255,.75)'; g.fill();
+  g.restore();
+}
+function logo(cx, cy, s, alpha = 1) { // the DHARA drop with two white waves
+  g.save(); g.globalAlpha = alpha; g.translate(cx, cy); g.scale(s / 32, s / 32); g.translate(-16, -16);
+  g.beginPath(); g.moveTo(16, 3.5); g.bezierCurveTo(16, 3.5, 7.5, 13.1, 7.5, 19.1); g.arc(16, 19.1, 8.5, Math.PI, 0, true);
+  g.bezierCurveTo(24.5, 13.1, 16, 3.5, 16, 3.5); g.closePath(); g.fillStyle = C.blue; g.fill();
+  g.strokeStyle = '#fff'; g.lineWidth = 1.7; g.lineCap = 'round';
+  [19.6, 23.2].forEach((y, i) => { g.globalAlpha = alpha * (i ? 0.55 : 1); g.beginPath(); g.moveTo(11.2, y); g.bezierCurveTo(12.8, y - 1.3, 14.4, y - 1.3, 16, y); g.bezierCurveTo(17.6, y + 1.3, 19.2, y + 1.3, 20.8, y); g.stroke(); });
+  g.restore();
+}
+function bg(top, bottom) { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, top); gr.addColorStop(1, bottom); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+function vignette(a = 0.55) { const gr = g.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.95); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, `rgba(0,0,0,${a})`); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+function grain(t, a = 0.035) { const r = rng(Math.floor(t * 30) + 7); g.save(); g.globalAlpha = a; g.fillStyle = '#fff'; for (let i = 0; i < 900; i++) g.fillRect(r() * W, r() * H, 1.5, 1.5); g.restore(); }
+function chip(s, x, y, { color = C.blue, fg = '#fff', size = 22, alpha = 1, dot = true } = {}) {
+  if (alpha <= 0) return; g.save(); g.globalAlpha = alpha; font(size, 650); g.letterSpacing = '1.5px';
+  const w = g.measureText(s).width + (dot ? 56 : 36); rr(x, y, w, size * 2, size); g.fillStyle = color; g.fill();
+  if (dot) { g.beginPath(); g.arc(x + 24, y + size, 6, 0, Math.PI * 2); g.fillStyle = fg; g.fill(); }
+  text(s, x + (dot ? 40 : 18), y + size * 1.36, { size, weight: 650, color: fg, ls: 1.5 }); g.restore(); return w;
+}
+function windowFrame(x, y, w, h, { alpha = 1, bar = 44, title = '', dark = false } = {}) {
+  g.save(); g.globalAlpha = alpha;
+  g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 80; g.shadowOffsetY = 30; rr(x, y, w, h, 22); g.fillStyle = dark ? '#0E1525' : '#fff'; g.fill();
+  g.shadowColor = 'transparent'; rr(x, y, w, bar, [22, 22, 0, 0]); g.fillStyle = dark ? '#131C30' : '#F1F5F9'; g.fill();
+  ['#FF5F57', '#FEBC2E', '#28C840'].forEach((c, i) => { g.beginPath(); g.arc(x + 26 + i * 22, y + bar / 2, 7, 0, Math.PI * 2); g.fillStyle = c; g.fill(); });
+  if (title) { font(18, 600, 'Mono'); const tw = g.measureText(title).width + 32; rr(x + w / 2 - tw / 2, y + 9, tw, bar - 18, 13); g.fillStyle = C.blue; g.fill(); text(title, x + w / 2, y + bar / 2 + 6, { size: 17, weight: 600, fam: 'Mono', color: '#fff', align: 'center' }); }
+  g.restore();
+}
+function cursor(x, y, press = 0, alpha = 1) {
+  g.save(); g.globalAlpha = alpha; g.translate(x, y); const s = 1.7 * (1 - press * 0.16); g.scale(s, s);
+  g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 8; g.shadowOffsetY = 3;
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(0, 22); g.lineTo(5.5, 17); g.lineTo(9.5, 26); g.lineTo(13, 24.5); g.lineTo(9, 16); g.lineTo(16, 16); g.closePath();
+  g.fillStyle = '#0B0F19'; g.fill(); g.shadowColor = 'transparent'; g.lineWidth = 1.6; g.strokeStyle = '#fff'; g.stroke(); g.restore();
+}
+function clickRing(x, y, p) { if (p <= 0 || p >= 1) return; g.save(); g.globalAlpha = (1 - p) * 0.8; g.strokeStyle = C.blue; g.lineWidth = 3; g.beginPath(); g.arc(x, y, 10 + eout(p) * 34, 0, Math.PI * 2); g.stroke(); g.restore(); }
+function track(t, keys) { // piecewise eased keyframes [[time, value], ...]
+  if (t <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) { const [t1, v1] = keys[i], [t0, v0] = keys[i - 1]; if (t <= t1) { const p = eio(prog(t, t0, t1)); return Array.isArray(v0) ? v0.map((v, j) => lerp(v, v1[j], p)) : lerp(v0, v1, p); } }
+  return keys[keys.length - 1][1];
+}
+
+// ---------- scenes (start, end, draw(local t)) ----------
+const SCENES = [];
+const scene = (a, b, fn) => SCENES.push({ a, b, fn });
+
+// S1 HOOK: a drop falls, the splash opens into a rooftop tank under a time-lapse sun.
+scene(0, 10.6, (t) => {
+  g.fillStyle = C.ink; g.fillRect(0, 0, W, H);
+  const impact = 1.9, surf = 650, cx = W / 2;
+  // the photo, revealed through the expanding ripple
+  const ir = eio(prog(t, 2.25, 4.1)) * 1500;
+  if (ir > 0) {
+    g.save(); g.beginPath(); g.ellipse(cx, surf, ir * 1.15, ir, 0, 0, Math.PI * 2); g.clip();
+    const hero = IMG.hero, z = lerp(1.55, 1.12, eout(prog(t, 2.2, 5))) * lerp(1, 1.42, eio(prog(t, 5, 10.6)));
+    const fx = lerp(0.5, 0.72, eio(prog(t, 4.5, 10.6))), fy = lerp(0.5, 0.47, eio(prog(t, 4.5, 10.6)));
+    const dw = W * z, dh = dw * (hero.height / hero.width);
+    g.drawImage(hero, W / 2 - fx * dw, H / 2 - fy * dh, dw, dh);
+    // time-lapse light: the sun sweeps across, the day warms up
+    const sp = prog(t, 4.2, 10.4), sx = lerp(W * 1.05, W * 0.55, sp), sy = lerp(H * 0.5, -H * 0.05, Math.sin(sp * Math.PI * 0.5));
+    const glare = g.createRadialGradient(sx, sy, 10, sx, sy, 900); glare.addColorStop(0, `rgba(255,236,200,${0.55 * sp})`); glare.addColorStop(1, 'rgba(255,200,120,0)');
+    g.fillStyle = glare; g.fillRect(0, 0, W, H);
+    g.fillStyle = `rgba(255,140,40,${0.16 * eio(sp)})`; g.fillRect(0, 0, W, H);
+    // rising heat lines
+    g.strokeStyle = `rgba(255,255,255,${0.12 * sp})`; g.lineWidth = 2;
+    for (let k = 0; k < 9; k++) { g.beginPath(); const x0 = 980 + k * 95; for (let yy = H; yy > 240; yy -= 12) { const xx = x0 + Math.sin(yy * 0.025 + t * 3 + k) * 10; yy === H ? g.moveTo(xx, yy) : g.lineTo(xx, yy); } g.stroke(); }
+    vignette(0.6);
+    // big time-lapse readout
+    const a = prog(t, 4.6, 5.3);
+    if (a > 0) {
+      const hour = lerp(9, 16, eio(sp)), hh = Math.floor(hour), mm = Math.floor((hour - hh) * 60 / 5) * 5;
+      text(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`, 120, 210, { size: 44, weight: 500, fam: 'Mono', color: '#fff', alpha: a });
+      text('ROOFTOP · HOSTEL BLOCK A', 120, 150, { size: 20, weight: 650, color: 'rgba(255,255,255,.75)', ls: 4, alpha: a });
+      const temp = lerp(24, 33, eio(prog(t, 5, 10.2)));
+      text(temp.toFixed(1), 110, 920, { size: 220, weight: 700, color: '#fff', alpha: a, ls: -8 });
+      font(220, 700); g.letterSpacing = '-8px'; const tw = g.measureText(temp.toFixed(1)).width;
+      text('°C', 110 + tw + 18, 830, { size: 80, weight: 600, color: '#fff', alpha: a });
+      text('tank water, by afternoon · illustration', 124, 980, { size: 24, weight: 500, color: 'rgba(255,255,255,.8)', alpha: a });
+    }
+    g.restore();
+  }
+  // the falling drop (before impact), with a short motion trail
+  if (t < impact) {
+    const p = prog(t, 0.2, impact), y = lerp(-120, surf - 34, ein(p) * 0.92 + p * 0.08);
+    for (let k = 5; k >= 0; k--) drawDrop(cx, y - k * 26 * p, 26, 1 + p * 0.5, (k ? 0.08 : 1) * clamp(t * 3));
+  }
+  // surface line and splash
+  if (t < 4.3) {
+    const sa = clamp(t * 2) * (1 - prog(t, 3.4, 4.3));
+    g.save(); g.globalAlpha = sa; g.strokeStyle = 'rgba(147,197,253,.5)'; g.lineWidth = 2; g.beginPath(); g.moveTo(0, surf); g.lineTo(W, surf); g.stroke(); g.restore();
+    const st = t - impact;
+    if (st > 0) {
+      for (let k = 0; k < 6; k++) { const rp = prog(st, k * 0.12, 1.6 + k * 0.12); if (rp > 0 && rp < 1) { g.save(); g.globalAlpha = (1 - rp) * 0.9; g.strokeStyle = k % 2 ? C.light : '#fff'; g.lineWidth = 3 - k * 0.3; g.beginPath(); g.ellipse(cx, surf, 20 + eout(rp) * (700 + k * 120), (20 + eout(rp) * (700 + k * 120)) * 0.18, 0, 0, Math.PI * 2); g.stroke(); g.restore(); } }
+      const r = rng(42);
+      for (let i = 0; i < 90; i++) { // ballistic droplets: an explosive crown
+        const ang = -Math.PI / 2 + (r() - 0.5) * 2.4, sp = 300 + r() * 900, life = 0.6 + r() * 0.9, sz = 2 + r() * 7;
+        if (st > life) continue;
+        const x = cx + Math.cos(ang) * sp * st, y = surf + Math.sin(ang) * sp * st + 0.5 * 1800 * st * st;
+        if (y > surf + 4) continue;
+        g.beginPath(); g.arc(x, y, sz * (1 - st / life * 0.5), 0, Math.PI * 2); g.fillStyle = `rgba(190,220,255,${1 - st / life})`; g.fill();
+      }
+      if (st < 0.25) { g.save(); g.globalAlpha = 1 - st / 0.25; const fl = g.createRadialGradient(cx, surf, 0, cx, surf, 260); fl.addColorStop(0, '#fff'); fl.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = fl; g.fillRect(cx - 300, surf - 300, 600, 600); g.restore(); }
+    }
+  }
+  if (t > 10.2) { g.fillStyle = `rgba(4,7,12,${eio(prog(t, 10.2, 10.6))})`; g.fillRect(0, 0, W, H); }
+});
+
+// S2 PROBLEM: heat strips the chlorine away; the paper register only says "cleaned"; four questions it can't answer.
+scene(10.6, 29.6, (t) => {
+  bg('#06101F', C.ink);
+  // tank cross-section with chlorine fading in the heat
+  const tankA = 1 - eio(prog(t, 4.6, 5.6)), tx = lerp(560, 300, eio(prog(t, 4.6, 5.6))) ;
+  if (tankA > 0) {
+    g.save(); g.globalAlpha = tankA * clamp(t * 2);
+    const x = tx - 330, y = 300, w = 660, h = 560;
+    const heat = eio(prog(t, 0.8, 4.4));
+    const hg = g.createLinearGradient(0, 120, 0, 520); hg.addColorStop(0, `rgba(245,158,11,${0.55 * heat})`); hg.addColorStop(1, 'rgba(245,158,11,0)'); g.fillStyle = hg; g.fillRect(x - 200, 60, w + 400, 520);
+    rr(x, y, w, h, 40); g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 4; g.stroke();
+    g.save(); rr(x, y, w, h, 40); g.clip();
+    const wl = y + 120; g.beginPath(); g.moveTo(x, wl); for (let xx = x; xx <= x + w; xx += 10) g.lineTo(xx, wl + Math.sin(xx * 0.02 + t * 2.4) * 8); g.lineTo(x + w, y + h); g.lineTo(x, y + h); g.closePath();
+    const wg = g.createLinearGradient(0, wl, 0, y + h); wg.addColorStop(0, `rgba(8,102,245,${0.55 - heat * 0.15})`); wg.addColorStop(1, 'rgba(6,40,110,.8)'); g.fillStyle = wg; g.fill();
+    const r = rng(9);
+    for (let i = 0; i < 70; i++) {
+      const px = x + 40 + r() * (w - 80), py = wl + 40 + r() * (h - 180), fade = clamp(1 - (heat * 1.25 - r() * 0.35)), dx = Math.sin(t * 1.5 + i) * 10;
+      if (fade <= 0) continue; g.beginPath(); g.arc(px + dx, py + Math.cos(t * 1.2 + i) * 8 - (1 - fade) * 60, 9, 0, Math.PI * 2); g.fillStyle = `rgba(20,184,166,${fade})`; g.fill();
+    }
+    g.restore();
+    text('free chlorine', x + 30, y + h + 50, { size: 26, weight: 600, color: C.teal });
+    text(`heat ${(24 + heat * 10).toFixed(0)} °C`, x + w - 30, y + h + 50, { size: 26, weight: 600, color: C.heat, align: 'right' });
+    g.restore();
+    rise('Heat speeds up', 1080, 470, t - 0.5, { size: 92 });
+    rise('chlorine loss.', 1080, 580, t - 0.9, { size: 92, colors: [C.teal, C.teal] });
+    text('Source: Water Research, 2024 review (doi:10.1016/j.watres.2024.121913)', 1084, 650, { size: 22, weight: 500, color: C.dim, alpha: clamp((t - 1.6) * 2) * tankA });
+    if (tankA < 1) { g.fillStyle = `rgba(4,7,12,${1 - tankA})`; g.fillRect(1000, 360, 920, 330); }
+  }
+  // the paper register
+  const regIn = spring(t - 5.0, 9, 0.8), regX = lerp(lerp(W + 600, W / 2, regIn), 520, eio(prog(t, 9.6, 10.6)));
+  if (t > 5) {
+    g.save(); g.translate(regX, 560); g.rotate(lerp(0.25, -0.04, regIn) + 0.01 * Math.sin(t)); const s = lerp(1, 0.78, eio(prog(t, 9.6, 10.6))); g.scale(s, s);
+    g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = 60; g.shadowOffsetY = 30; rr(-380, -260, 760, 520, 18); g.fillStyle = C.paper; g.fill(); g.shadowColor = 'transparent';
+    for (let k = 0; k < 8; k++) { g.strokeStyle = 'rgba(8,102,245,.14)'; g.lineWidth = 2; g.beginPath(); g.moveTo(-380, -170 + k * 56); g.lineTo(380, -170 + k * 56); g.stroke(); }
+    g.strokeStyle = 'rgba(220,38,38,.35)'; g.beginPath(); g.moveTo(-300, -260); g.lineTo(-300, 260); g.stroke();
+    text('Tank A · Block A', -270, -190, { size: 40, weight: 700, color: '#0F172A' });
+    text('12 March — drained and scrubbed.', -270, -120, { size: 38, fam: 'Serif', color: '#1E3A8A' });
+    text('Signed, maintenance team', -270, -64, { size: 34, fam: 'Serif', color: '#475569' });
+    const st = spring(t - 8.4, 18, 0.55);
+    if (t > 8.4) { g.save(); g.translate(150, 110); g.rotate(-0.16); const ss = lerp(2.6, 1, clamp(st)); g.scale(ss, ss); g.globalAlpha = clamp((t - 8.4) * 6);
+      rr(-170, -52, 340, 104, 14); g.lineWidth = 7; g.strokeStyle = '#15803D'; g.stroke(); text('CLEANED', 0, 22, { size: 60, weight: 800, color: '#15803D', align: 'center', ls: 8 }); g.restore(); }
+    g.restore();
+  }
+  // four questions the register can't answer
+  const Q = [['How warm is the water?', 10.0, C.heat, 'temp'], ['Is any chlorine left?', 11.9, C.teal, 'cl'], ['Who checked the work?', 13.6, C.light, 'who'], ['What did the lab find?', 15.4, '#C4B5FD', 'lab']];
+  Q.forEach(([q, at, col, ic], i) => {
+    if (t < at) return; const p = eout5(prog(t, at, at + 0.6)), y = 330 + i * 150;
+    g.save(); g.globalAlpha = p; const x = 1010 + (1 - p) * 80;
+    rr(x, y - 62, 90, 90, 24); g.fillStyle = col + '22'; g.fill(); g.strokeStyle = col; g.lineWidth = 3;
+    const ix = x + 45, iy = y - 17;
+    g.beginPath();
+    if (ic === 'temp') { g.roundRect(ix - 7, iy - 30, 14, 42, 7); g.stroke(); g.beginPath(); g.arc(ix, iy + 18, 12, 0, Math.PI * 2); g.fillStyle = col; g.fill(); }
+    else if (ic === 'cl') { g.arc(ix - 12, iy, 10, 0, Math.PI * 2); g.moveTo(ix + 22, iy - 8); g.arc(ix + 12, iy - 8, 10, 0, Math.PI * 2); g.stroke(); }
+    else if (ic === 'who') { g.arc(ix, iy - 12, 11, 0, Math.PI * 2); g.moveTo(ix - 20, iy + 26); g.quadraticCurveTo(ix, iy - 4, ix + 20, iy + 26); g.stroke(); }
+    else { g.rect(ix - 16, iy - 26, 32, 46); g.moveTo(ix - 8, iy - 10); g.lineTo(ix + 8, iy - 10); g.moveTo(ix - 8, iy + 2); g.lineTo(ix + 8, iy + 2); g.stroke(); }
+    g.restore();
+    rise(q, 1130, y, t - at, { size: 54, weight: 650 });
+    if (t > at + 0.4) text('?', 1840, y, { size: 70, weight: 800, color: col, align: 'right', alpha: 0.4 + 0.6 * Math.abs(Math.sin((t - at) * 3)) });
+  });
+  // vortex: everything spirals into one point
+  const vp = ein(prog(t, 17.8, 19.0));
+  if (vp > 0) {
+    const snap = g.getImageData(0, 0, W, H); g.fillStyle = C.ink; g.fillRect(0, 0, W, H);
+    const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H; tmp.getContext('2d').putImageData(snap, 0, 0);
+    g.save(); g.translate(W / 2, H / 2); g.rotate(vp * 5.5); g.scale(1 - vp * 0.98, 1 - vp * 0.98); g.globalAlpha = 1 - vp * 0.6; g.drawImage(tmp, -W / 2, -H / 2); g.restore();
+  }
+});
+
+// S3 PAINKILLER: a centrifugal swirl of water condenses into the DHARA drop.
+scene(29.6, 45.6, (t) => {
+  bg('#040A16', C.ink);
+  const cx = W / 2, cy = 470, r = rng(5), N = 520, form = eio(prog(t, 0.1, 1.7));
+  for (let i = 0; i < N; i++) {
+    const a0 = r() * Math.PI * 2, rad0 = 80 + r() * 900, spin = 3 + r() * 4;
+    const tx = (r() - 0.5) * 120, ty = (r() - 0.6) * 150; // a point inside the drop
+    const ang = a0 + spin * (1 - form) * 2.2 + t * 0.8 * (1 - form), rad = lerp(rad0, 0, form);
+    const x = lerp(cx + Math.cos(ang) * rad, cx + tx * (1 - form * 0.3), form), y = lerp(cy + Math.sin(ang) * rad * 0.62, cy + ty, form);
+    const a = (1 - prog(t, 1.5, 1.9)) * clamp(t * 4);
+    if (a <= 0) continue; g.beginPath(); g.arc(x, y, 2 + r() * 3.5, 0, Math.PI * 2); g.fillStyle = i % 3 ? `rgba(59,130,246,${a})` : `rgba(191,219,254,${a})`; g.fill();
+  }
+  const lp = spring(t - 1.45, 10, 0.68), up = eio(prog(t, 6.3, 7.3));
+  const ls = lerp(lerp(0, 230, lp), 120, up), ly = lerp(cy, 230, up);
+  if (t > 1.45) logo(cx, ly, ls);
+  if (t > 1.5 && t < 2.1) { const fp = prog(t, 1.5, 2.1); g.save(); g.globalAlpha = (1 - fp) * 0.6; g.strokeStyle = C.light; g.lineWidth = 3; g.beginPath(); g.arc(cx, cy, 60 + eout(fp) * 600, 0, Math.PI * 2); g.stroke(); g.restore(); }
+  const wy = lerp(820, 400, up);
+  rise('DHARA', cx, wy, t - 1.9, { size: lerp(150, 92, up), weight: 700, align: 'center', ls: lerp(-4, 2, up), stagger: 0.05 });
+  if (up < 1) rise('Water deserves more than a record.', cx, 930, t - 3.0, { size: 64, weight: 400, fam: 'Serif', align: 'center', color: C.light, stagger: 0.06 });
+  // three pillars
+  const P = [['Measure', 6.8, 'wave'], ['Prioritise', 9.4, 'gauge'], ['Record', 12.0, 'ledger']];
+  P.forEach(([name, at, kind], i) => {
+    if (t < at) return; const p = eout5(prog(t, at, at + 0.7)), x = 330 + i * 630, y = 560;
+    g.save(); g.globalAlpha = p; g.translate(0, (1 - p) * 60);
+    rr(x - 250, y, 500, 360, 32); g.fillStyle = 'rgba(255,255,255,.04)'; g.fill(); g.strokeStyle = 'rgba(147,197,253,.25)'; g.lineWidth = 2; g.stroke();
+    const lt = t - at;
+    if (kind === 'wave') { g.strokeStyle = C.sky; g.lineWidth = 6; g.lineCap = 'round'; g.beginPath(); const n = Math.floor(clamp(lt / 1.4) * 60); for (let k = 0; k <= n; k++) { const xx = x - 200 + k * 400 / 60, yy = y + 150 - Math.sin(k * 0.18) * 30 - k * 0.9; k ? g.lineTo(xx, yy) : g.moveTo(xx, yy); } g.stroke(); }
+    if (kind === 'gauge') { g.lineWidth = 22; ['#16A34A', '#94A3B8', C.blue, '#D97706', '#DC2626'].forEach((c, k) => { g.strokeStyle = c; g.globalAlpha = p * (k === 4 ? 1 : 0.35); g.beginPath(); g.arc(x, y + 200, 120, Math.PI + k * Math.PI / 5 + 0.03, Math.PI + (k + 1) * Math.PI / 5 - 0.03); g.stroke(); }); g.globalAlpha = p;
+      const ang = Math.PI + lerp(0.1, 4.5, spring(lt - 0.2, 7, 0.55)) * Math.PI / 5; g.strokeStyle = '#fff'; g.lineWidth = 6; g.beginPath(); g.moveTo(x, y + 200); g.lineTo(x + Math.cos(ang) * 100, y + 200 + Math.sin(ang) * 100); g.stroke(); g.beginPath(); g.arc(x, y + 200, 12, 0, Math.PI * 2); g.fillStyle = '#fff'; g.fill(); }
+    if (kind === 'ledger') { for (let k = 0; k < 4; k++) { const rp = eout(prog(lt, k * 0.25, k * 0.25 + 0.5)); if (rp <= 0) continue; g.globalAlpha = p * rp; rr(x - 200, y + 70 + k * 56, 400, 42, 10); g.fillStyle = 'rgba(147,197,253,.12)'; g.fill(); text(['9f2c41ab · photo', 'e07d3c5e · reading', '88a10b6f · review', 'd2e47c19 · follow-up'][k], x - 180, y + 99 + k * 56, { size: 20, fam: 'Mono', color: C.light, weight: 400 }); } g.globalAlpha = p; }
+    text(name, x, y + 320, { size: 44, weight: 650, align: 'center' });
+    g.restore();
+  });
+  vignette(0.5);
+});
+
+// S4 ARCHITECTURE: probe -> AWS IoT Core -> rules -> DHARA on EC2 + S3 archive. The camera follows the message.
+const NODES = { probe: [330, 540], iot: [960, 540], ec2: [1580, 330], s3: [1580, 760] };
+function node(k, label, sub, p, kind) {
+  const [x, y] = NODES[k]; if (p <= 0) return; g.save(); g.globalAlpha = p; g.translate(x, y); const s = lerp(0.85, 1, eout(p)); g.scale(s, s);
+  rr(-170, -110, 340, 220, 30); g.fillStyle = '#0E1A30'; g.fill(); g.strokeStyle = k === 'iot' ? C.sky : 'rgba(147,197,253,.35)'; g.lineWidth = k === 'iot' ? 3 : 2; g.stroke();
+  g.strokeStyle = C.light; g.fillStyle = C.light; g.lineWidth = 4;
+  if (kind === 'chip') { rr(-34, -76, 68, 52, 8); g.stroke(); for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(i * 12, -76); g.lineTo(i * 12, -88); g.moveTo(i * 12, -24); g.lineTo(i * 12, -12); g.stroke(); } }
+  if (kind === 'cloud') { g.beginPath(); g.arc(-22, -46, 22, Math.PI * 0.6, Math.PI * 1.8); g.arc(8, -60, 28, Math.PI * 1.1, Math.PI * 1.95); g.arc(32, -42, 20, Math.PI * 1.5, Math.PI * 0.5); g.closePath(); g.stroke(); }
+  if (kind === 'server') { for (let i = 0; i < 3; i++) { rr(-36, -86 + i * 22, 72, 18, 4); g.stroke(); g.beginPath(); g.arc(24, -77 + i * 22, 3, 0, Math.PI * 2); g.fill(); } }
+  if (kind === 'bucket') { g.beginPath(); g.ellipse(0, -78, 34, 10, 0, 0, Math.PI * 2); g.moveTo(-34, -78); g.lineTo(-26, -24); g.ellipse(0, -24, 26, 8, 0, Math.PI, 0, true); g.lineTo(34, -78); g.stroke(); }
+  text(label, 0, 34, { size: 34, weight: 650, align: 'center' }); text(sub, 0, 74, { size: 22, weight: 500, color: C.muted, align: 'center' });
+  g.restore();
+}
+function wire(a, b, p, label, lp = 1) {
+  const [x1, y1] = NODES[a], [x2, y2] = NODES[b]; const sx = x1 + 175, ex = x2 - 175;
+  g.save(); g.strokeStyle = 'rgba(147,197,253,.35)'; g.lineWidth = 3; g.setLineDash([10, 10]); g.lineDashOffset = -p * 200; g.beginPath(); g.moveTo(sx, y1);
+  g.bezierCurveTo(sx + (ex - sx) * 0.5, y1, sx + (ex - sx) * 0.5, y2, ex, y2); g.stroke(); g.restore();
+  if (label) text(label, (sx + ex) / 2, Math.min(y1, y2) + (y1 === y2 ? -26 : (y2 - y1) / 2 - 20), { size: 22, weight: 600, color: C.light, align: 'center', alpha: lp });
+}
+function packet(a, b, p, col = '#fff') {
+  if (p <= 0 || p >= 1) return; const [x1, y1] = NODES[a], [x2, y2] = NODES[b]; const sx = x1 + 175, ex = x2 - 175, u = eio(p);
+  const bx = (t) => Math.pow(1 - t, 3) * sx + 3 * Math.pow(1 - t, 2) * t * (sx + (ex - sx) * 0.5) + 3 * (1 - t) * t * t * (sx + (ex - sx) * 0.5) + t * t * t * ex;
+  const by = (t) => Math.pow(1 - t, 3) * y1 + 3 * Math.pow(1 - t, 2) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t * y2;
+  for (let k = 8; k >= 0; k--) { const tt = clamp(u - k * 0.012); g.beginPath(); g.arc(bx(tt), by(tt), 12 - k * 1.1, 0, Math.PI * 2); g.fillStyle = k ? `rgba(147,197,253,${0.5 - k * 0.05})` : col; g.fill(); }
+}
+scene(45.6, 64.4, (t) => {
+  bg('#050B18', C.ink);
+  g.save(); g.strokeStyle = 'rgba(59,130,246,.07)'; g.lineWidth = 1; for (let x = 0; x < W; x += 60) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); } for (let y = 0; y < H; y += 60) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); } g.restore();
+  // camera: start close on the probe, follow the message, pull out to the whole system
+  const cam = track(t, [[0, [330, 540, 1.7]], [2.5, [330, 540, 1.6]], [7.5, [960, 540, 1.35]], [10.5, [1250, 540, 1.1]], [13.5, [960, 540, 0.92]], [18.8, [960, 540, 0.9]]]);
+  g.save(); g.translate(W / 2, H / 2); g.scale(cam[2], cam[2]); g.translate(-cam[0], -cam[1]);
+  wire('probe', 'iot', t * 0.3, 'MQTT · TLS · X.509 device certificate', prog(t, 3.2, 4));
+  if (t > 7.6) { wire('iot', 'ec2', t * 0.3, 'rule dhara_forward → HTTPS', prog(t, 9.6, 10.4)); wire('iot', 's3', t * 0.3, 'rule dhara_archive', prog(t, 11.4, 12.2)); }
+  node('probe', 'ESP32 + DS18B20', 'in-tank probe', prog(t, 0, 0.6), 'chip');
+  node('iot', 'AWS IoT Core', 'ap-south-1', prog(t, 3.6, 4.3), 'cloud');
+  node('ec2', 'DHARA', 'on Amazon EC2', prog(t, 9.2, 9.9), 'server');
+  node('s3', 'Amazon S3', 'raw archive, token removed', prog(t, 11.0, 11.7), 'bucket');
+  for (let k = 0; k < 6; k++) { const s0 = 4.0 + k * 2.6; packet('probe', 'iot', prog(t, s0, s0 + 1.6)); packet('iot', 'ec2', prog(t, s0 + 1.7 + (k ? 0 : 3.6), s0 + 3.0 + (k ? 0 : 3.6))); if (k || t > 11) packet('iot', 's3', prog(t, s0 + 1.8 + (k ? 0 : 5.4), s0 + 3.1 + (k ? 0 : 5.4)), C.light); }
+  g.restore();
+  rise('How a reading travels', 120, 140, t - 0.3, { size: 46, weight: 600, color: 'rgba(255,255,255,.9)' });
+  vignette(0.5);
+});
+
+// S5 LIVE PROOF: the simulated board publishes; S3 and the live database on EC2 show the same reading.
+function wokwiFrame(ms) { let f = WOKWI[0]; for (const w of WOKWI) { if (w.ms <= ms) f = w; else break; } return f && IMG[f.name]; }
+function terminal(x, y, w, h, lines, t, alpha) {
+  windowFrame(x, y, w, h, { dark: true, title: 'aws-cli · ap-south-1', alpha });
+  g.save(); g.globalAlpha = alpha; g.beginPath(); g.rect(x, y + 44, w, h - 44); g.clip();
+  let yy = y + 92, shown = 0;
+  for (const [at, str, kind] of lines) {
+    if (t < at) break;
+    const isCmd = kind === 'cmd', n = isCmd ? Math.floor(clamp((t - at) / Math.max(0.6, str.length * 0.025)) * str.length) : str.length;
+    const col = isCmd ? '#fff' : kind === 'hi' ? '#5EEAD4' : kind === 'ok' ? C.light : '#94A3B8';
+    text((isCmd ? '$ ' : '') + str.slice(0, n), x + 28, yy, { size: 19, weight: 400, fam: 'Mono', color: col });
+    yy += kind === 'gap' ? 18 : 34; shown++;
+  }
+  g.restore();
+}
+scene(64.4, 89.4, (t) => {
+  bg('#06101F', C.ink);
+  const split = eio(prog(t, 10.4, 11.4));
+  const wx = lerp(260, 70, split), ww = lerp(1400, 820, split), wh = ww * (1010 / 955) * 0.84;
+  windowFrame(wx, 120, ww, wh + 44, { title: 'wokwi.com · simulated ESP32' });
+  const fr = wokwiFrame(lerp(0, 12300, prog(t, 0.5, 24)) | 0);
+  if (fr) { g.save(); rr(wx, 164, ww, wh, [0, 0, 22, 22]); g.clip();
+    const z = track(t, [[0, 1.0], [4, 1.0], [6.5, 1.55], [9.8, 1.55], [11.4, 1.0]]), fy = track(t, [[0, 0.45], [4, 0.45], [6.5, 0.86], [9.8, 0.86], [11.4, 0.5]]);
+    const dw = ww * z, dh = dw * (fr.height / fr.width) * 0.84 / 0.84; g.drawImage(fr, wx + ww / 2 - 0.5 * dw, 164 + wh * fy - fy * dh, dw, dh); g.restore(); }
+  chip('SIMULATED ESP32 · WOKWI', wx, 60, { color: '#1E293B', fg: C.light, size: 18, alpha: clamp(t * 2) });
+  chip('REAL AWS', wx + 380, 60, { color: C.blue, size: 18, alpha: clamp((t - 9.6) * 3) });
+  const P = window.PROOF;
+  if (split > 0) {
+    const lines = [[11.6, P.cmd1, 'cmd'], ...P.s3.map((l, i) => [13.0 + i * 0.12, l, 'out']), [13.8, '', 'gap'], [14.2, P.cmd2, 'cmd'], ...P.objLines.map((l, i) => [15.8 + i * 0.1, l, 'hi']), [16.6, '', 'gap'], [17.0, P.cmd3, 'cmd'], ...P.db.map((l, i) => [18.6 + i * 0.15, l, i ? 'out' : 'ok'])];
+    terminal(lerp(W, 940, split), 120, 920, 860, lines, t, split);
+  }
+  if (t > 22.5) { const a = eout(prog(t, 22.5, 23.2)); chip('SAME READING · 11:43:00 UTC · S3 → DHARA ON EC2', 940, 1000, { color: C.blue, size: 20, alpha: a }); }
+});
+
+// S6 PRODUCT: the real app, a floating window, an animated cursor and a camera that frames each action.
+const WIN = { x: 210, y: 92, w: 1500, h: 844 + 44 };
+function shotView(name, cx, cy, z, alpha = 1) { // cx, cy, z in page CSS px (1280 wide)
+  const im = IMG[name]; if (!im) return; const scale = im.width / 1280, vw = 1280 / z, vh = 720 / z;
+  const sx = clamp(cx - vw / 2, 0, 1280 - vw) * scale, sy = clamp(cy - vh / 2, 0, im.height / scale - vh) * scale;
+  g.save(); g.globalAlpha = alpha; rr(WIN.x, WIN.y + 44, WIN.w, WIN.h - 44, [0, 0, 22, 22]); g.clip();
+  g.fillStyle = '#F7FAFF'; g.fillRect(WIN.x, WIN.y + 44, WIN.w, WIN.h - 44);
+  g.drawImage(im, sx, sy, vw * scale, vh * scale, WIN.x, WIN.y + 44, WIN.w, WIN.h - 44); g.restore();
+  return { map: (px, py) => [WIN.x + (px - sx / scale) * (WIN.w / vw), WIN.y + 44 + (py - sy / scale) * ((WIN.h - 44) / vh)] };
+}
+scene(89.4, 131.4, (t) => {
+  bg('#EAF3FF', '#DCE9FB');
+  const seg = (a, b) => t >= a && t < b;
+  let title = 'dhara · overview', name = 'w1_dashboard', cam = [640, 360, 1], cur = null, press = 0, ring = -1, fade = 1;
+  if (t < 7.0) { // L09: overview, then the "measure or review next" card
+    cam = track(t, [[0, [640, 360, 1]], [2.2, [640, 380, 1]], [4.2, [600, 520, 1.55]], [7, [600, 520, 1.55]]]);
+    cur = track(t, [[0, [1000, 650]], [2.4, [900, 600]], [4.4, [850, 563]], [7, [850, 563]]]);
+  } else if (t < 15.3) { // L10: open test priority, read why
+    const lt = t - 7.0;
+    if (lt < 1.5) { cam = track(lt, [[0, [600, 520, 1.55]], [1.2, [640, 360, 1]]]); cur = track(lt, [[0, [850, 563]], [1.3, [128, 297]]]); press = lt > 1.3 ? 1 : 0; ring = prog(lt, 1.3, 1.9); }
+    else { name = 'w2_priority'; title = 'dhara · test priority'; cam = track(lt - 1.5, [[0, [640, 360, 1]], [1.6, [610, 330, 1.6]], [8, [610, 340, 1.6]]]); cur = track(lt - 1.5, [[0, [128, 297]], [1.8, [700, 372]], [5, [800, 372]]]); ring = prog(lt, 1.3, 1.9); }
+  } else if (t < 24.6) { // L11: the technician enters 0.15 mg/L
+    const lt = t - 15.3; title = 'dhara · record measurement';
+    const frames = ['t2_form0', 't2_type1', 't2_type2', 't2_type3', 't2_type4']; const k = clamp(Math.floor((lt - 2.2) / 0.32) + 1, 0, 4);
+    name = lt < 2.2 ? 't2_form0' : frames[k];
+    if (lt > 6.4) { name = 'w3_tank'; title = 'dhara · tank A'; cam = track(lt - 6.4, [[0, [640, 380, 1.1]], [1.4, [620, 520, 1.7]], [3, [620, 520, 1.7]]]); cur = track(lt - 6.4, [[0, [560, 430]], [1.4, [748, 520]]]); }
+    else { cam = track(lt, [[0, [640, 360, 1]], [1.6, [480, 400, 1.7]], [6.4, [480, 400, 1.7]]]); cur = track(lt, [[0, [700, 600]], [1.8, [470, 427]], [6.4, [470, 427]]]); press = lt > 1.8 && lt < 2.1 ? 1 : 0; ring = prog(lt, 1.8, 2.4); }
+  } else if (t < 34.8) { // L12: evidence with SHA-256; the submitter can never approve it
+    const lt = t - 24.6;
+    if (lt < 6.6) { name = 'w4_event'; title = 'dhara · maintenance event'; cam = track(lt, [[0, [640, 360, 1]], [1.4, [640, 560, 1.15]], [3.6, [610, 610, 1.75]], [6.6, [610, 610, 1.75]]]); cur = track(lt, [[0, [900, 300]], [3.6, [620, 612]]]); }
+    else { name = 'w35_queue'; title = 'dhara · review queue'; cam = track(lt - 6.6, [[0, [640, 360, 1.15]], [1.2, [584, 128, 1.9]], [4, [584, 128, 1.9]]]); cur = track(lt - 6.6, [[0, [700, 300]], [1.3, [880, 140]]]); }
+  } else { // L13: the public QR page on a phone
+    const lt = t - 34.8; fade = 1 - eio(prog(lt, 0, 0.7));
+    name = 'w3_tank'; title = 'dhara · tank A'; cam = [1090, 330, 1.6];
+  }
+  if (fade > 0) {
+    g.save(); g.globalAlpha = fade; g.translate(W / 2, H / 2); const sc = lerp(1, 0.9, 1 - fade); g.scale(sc, sc); g.translate(-W / 2, -H / 2);
+    windowFrame(WIN.x, WIN.y, WIN.w, WIN.h, { title });
+    const v = shotView(name, cam[0], cam[1], cam[2]);
+    if (cur && v) { const [cx, cy] = v.map(cur[0], cur[1]); if (ring >= 0) clickRing(cx, cy, ring); cursor(cx, cy, press); }
+    g.restore();
+  }
+  if (t >= 34.8) { // phone mock-up
+    const lt = t - 34.8, p = spring(lt - 0.2, 9, 0.8), pw = 420, ph = 880, px = 560, py = lerp(H + 50, 100, p);
+    g.save(); g.shadowColor = 'rgba(15,23,42,.35)'; g.shadowBlur = 70; g.shadowOffsetY = 30; rr(px - 16, py - 16, pw + 32, ph + 32, 64); g.fillStyle = '#0B1222'; g.fill(); g.restore();
+    const im = IMG.p1_public; if (im) { g.save(); rr(px, py, pw, ph, 50); g.clip(); const sc = pw / im.width, scroll = track(lt, [[0, 0], [1.6, 0], [5.2, 360]]); g.drawImage(im, px, py - scroll, pw, im.height * sc); g.restore(); }
+    rise('Scan the QR. See the status.', 1100, 520, lt - 0.8, { size: 46, weight: 650, color: '#0F172A' });
+    text('No login. No private details.', 1100, 580, { size: 30, weight: 500, color: '#475569', alpha: clamp((lt - 1.5) * 2) });
+  }
+  // lower-third caption
+  const caps = [[0.4, 'Every tank at a glance'], [7.6, 'Testing priority, with every reason shown'], [15.6, 'A technician records free chlorine: 0.15 mg/L'], [24.9, 'Evidence, fingerprinted with SHA-256'], [31.4, 'Submitters can never approve their own work']];
+  let cap = null; caps.forEach(([at, s]) => { if (t >= at && t < 34.8) cap = [at, s]; });
+  if (cap) { const a = eout(prog(t, cap[0], cap[0] + 0.5)); font(30, 650); const w = g.measureText(cap[1]).width + 64; g.save(); g.globalAlpha = a; rr(W / 2 - w / 2, 968 + (1 - a) * 20, w, 64, 32); g.fillStyle = '#0F172A'; g.fill(); text(cap[1], W / 2, 1010 + (1 - a) * 20, { size: 30, weight: 600, align: 'center' }); g.restore(); }
+});
+
+// S7 IMPACT: three benefits, then the one thing DHARA never claims.
+scene(131.4, 147.2, (t) => {
+  bg('#040A16', C.ink);
+  const B = [['No guessing', 'which tank to test.', 0.8, 'rank'], ['No lost', 'evidence.', 2.6, 'hash'], ['Every decision,', 'named and timed.', 4.3, 'time']];
+  const out = eio(prog(t, 6.6, 7.2));
+  B.forEach(([a, b, at, kind], i) => {
+    if (t < at) return; const p = eout5(prog(t, at, at + 0.7)), x = 330 + i * 630;
+    g.save(); g.globalAlpha = p * (1 - out); g.translate(0, (1 - p) * 50 - out * 40);
+    const lt = t - at;
+    if (kind === 'rank') { ['TANK-B · Medium', 'TANK-A · Urgent'].forEach((s, k) => { const sw = spring(lt - 0.5, 9, 0.7), yy = 330 + (k === 1 ? lerp(90, 0, sw) : lerp(0, 90, sw)); rr(x - 200, yy, 400, 70, 18); g.fillStyle = k === 1 ? 'rgba(239,68,68,.18)' : 'rgba(255,255,255,.06)'; g.fill(); text(s, x - 170, yy + 46, { size: 28, weight: 600, color: k === 1 ? '#FCA5A5' : C.muted }); }); }
+    if (kind === 'hash') { const hx = '9f2c41abe07d3c5e88a10b6fd2e47c19'; text(hx.slice(0, Math.floor(clamp(lt / 1.2) * 16)), x, 380, { size: 34, fam: 'Mono', weight: 400, color: '#5EEAD4', align: 'center' }); text(hx.slice(16, 16 + Math.floor(clamp((lt - 0.6) / 1.2) * 16)), x, 430, { size: 34, fam: 'Mono', weight: 400, color: '#5EEAD4', align: 'center' }); text('SHA-256', x, 320, { size: 22, weight: 650, color: C.muted, align: 'center', ls: 3 }); }
+    if (kind === 'time') { for (let k = 0; k < 3; k++) { const kp = eout(prog(lt, k * 0.3, k * 0.3 + 0.5)); g.globalAlpha = p * kp * (1 - out); g.beginPath(); g.arc(x - 160, 330 + k * 60, 9, 0, Math.PI * 2); g.fillStyle = C.sky; g.fill(); text(['warden · 17:32 · accepted', 'technician · 17:30 · 0.15 mg/L', 'system · 17:30 · follow-up'][k], x - 135, 340 + k * 60, { size: 24, weight: 500, fam: 'Mono', color: C.light }); } g.globalAlpha = p * (1 - out); }
+    text(a, x, 640, { size: 56, weight: 700, align: 'center' }); text(b, x, 712, { size: 56, weight: 400, fam: 'Serif', align: 'center', color: C.light });
+    g.restore();
+  });
+  if (t > 7.2) {
+    const lt = t - 7.2;
+    rise('DHARA never claims the water is safe.', W / 2, 330, lt - 0.1, { size: 72, weight: 650, align: 'center' });
+    const sp = spring(lt - 1.2, 16, 0.55);
+    if (lt > 1.2) { g.save(); g.translate(W / 2, 560); g.rotate(-0.08); const s = lerp(2.4, 1, clamp(sp)); g.scale(s, s); g.globalAlpha = clamp((lt - 1.2) * 5);
+      rr(-300, -70, 600, 140, 18); g.lineWidth = 8; g.strokeStyle = C.red; g.stroke(); text('SAFE TO DRINK', 0, 26, { size: 70, weight: 800, color: C.red, align: 'center', ls: 6 });
+      const lp = eout(prog(lt, 1.8, 2.3)); g.beginPath(); g.moveTo(-330, 40); g.lineTo(-330 + 660 * lp, -40); g.lineWidth = 10; g.stroke(); g.restore(); }
+    ['What was measured', 'What was done', 'What still needs doing'].forEach((s, k) => { const at = 3.2 + k * 0.9; rise(s, 380 + k * 580, 820, lt - at, { size: 40, weight: 600, align: 'center', color: k === 2 ? C.light : '#fff' }); });
+  }
+  vignette(0.5);
+});
+
+// S8 OUTRO: the drop returns, the ripple carries the name.
+scene(147.2, 158.5, (t) => {
+  g.fillStyle = C.ink; g.fillRect(0, 0, W, H);
+  const cx = W / 2, surf = 560, impact = 0.9;
+  if (t < impact) { const p = prog(t, 0, impact); drawDrop(cx, lerp(-100, surf - 30, ein(p)), 24, 1 + p * 0.4); }
+  const st = t - impact;
+  if (st > 0) { for (let k = 0; k < 5; k++) { const rp = prog(st, k * 0.18, 2.6 + k * 0.18); if (rp > 0 && rp < 1) { g.save(); g.globalAlpha = (1 - rp) * 0.7; g.strokeStyle = k % 2 ? C.light : C.blue; g.lineWidth = 3; g.beginPath(); g.ellipse(cx, surf, 30 + eout(rp) * (900 + k * 100), (30 + eout(rp) * (900 + k * 100)) * 0.2, 0, 0, Math.PI * 2); g.stroke(); g.restore(); } } }
+  const lp = spring(t - 1.1, 9, 0.7);
+  if (t > 1.1) logo(cx, 380, lerp(0, 150, lp));
+  rise('DHARA', cx, 620, t - 1.5, { size: 120, weight: 700, align: 'center', stagger: 0.05 });
+  rise('Water deserves more than a record.', cx, 720, t - 2.3, { size: 58, weight: 400, fam: 'Serif', align: 'center', color: C.light, stagger: 0.06 });
+  const fa = clamp((t - 3.6) * 1.5);
+  text('AWS IoT Core  ·  Amazon EC2  ·  Amazon S3', cx, 860, { size: 28, weight: 600, align: 'center', color: C.muted, alpha: fa, ls: 2 });
+  text('github.com/Aaditya1273/dhara', cx, 910, { size: 28, weight: 500, fam: 'Mono', align: 'center', color: C.light, alpha: fa });
+  text('Environmental Hacks 2026 · Heat & Water', cx, 960, { size: 22, weight: 500, align: 'center', color: C.dim, alpha: fa });
+  if (t > 10.0) { g.fillStyle = `rgba(0,0,0,${prog(t, 10.0, 11.3)})`; g.fillRect(0, 0, W, H); }
+});
+
+window.DURATION = 158.5;
+window.seek = (T) => {
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  for (const s of SCENES) if (T >= s.a && T < s.b) { g.save(); s.fn(T - s.a); g.restore(); }
+  // short dip-to-black between scenes that don't hand over visually
+  grain(T, 0.025);
+};
+</script></body></html>

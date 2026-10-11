@@ -42,3 +42,13 @@ Thumbs.db
 # --- Firmware builds ---
 .pio/
 build/
+
+# --- Demo video: sources are committed; renders, captures, models and licensed audio are not ---
+/video/out/
+/video/cap/
+/video/node_modules/
+/video/.venv-tts/
+/video/audio/models/
+/video/audio/_tmp/
+/video/audio/*.wav
+/video/audio/*.mp3
