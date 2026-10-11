@@ -1018,7 +1018,7 @@ class InterfaceTests(DharaTestCase):
         r = self.client.get('/')
         self.assertEqual(r.context['demo_qr_url'], reverse('public_tank_status', args=[t.public_token]))
         self.assertContains(r, 'Illustration, not measured data')
-        self.assertContains(r, 'Illustrative demo data')
+        self.assertContains(r, 'Example readings with illustrative demo data')
 
     def test_series_chart_requires_two_points_and_draws_threshold(self):
         from .views import series_chart

@@ -442,14 +442,11 @@ a.mcard:hover { transform: translateY(-2px); text-decoration: none; color: var(-
   border: 1px solid var(--dhara-border); color: var(--dhara-navy); flex: none; }
 .qr-glyph svg { width: 34px; height: 34px; }
 .qr-link { display: inline-block; margin-top: .25rem; font-size: var(--fs-xs); font-weight: 650; color: var(--dhara-blue); }
-.demo-flag { display: inline-flex; align-items: center; gap: .35rem; font-size: var(--fs-2xs); font-weight: 650; flex: none;
-  color: var(--dhara-warning); background: var(--dhara-warning-bg); padding: .25rem .6rem; border-radius: var(--radius-pill); }
 
 /* Stacked hero stage (below 1100px): a compact grid under the photograph */
 .hero-stage { order: 3; position: relative; z-index: 3; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3);
   width: 100%; max-width: calc(var(--content-max) + 2 * var(--page-gutter)); margin: calc(-1 * clamp(2rem, 8vw, 4rem)) auto 0;
   padding: 0 var(--page-gutter) clamp(3rem, 7vw, 5rem); }
-.hs-flag { grid-column: 1 / -1; justify-self: start; }
 .hs-priority, .hs-qr { grid-column: 1 / -1; }
 @media (max-width: 479px) { .hs-air, .hs-chlorine, .hs-water { grid-column: 1 / -1; } }
 @media (min-width: 700px) and (max-width: 1099px) { .hero-media img { aspect-ratio: 16 / 9; object-position: 80% 50%; } .hero-stage { grid-template-columns: repeat(3, minmax(0, 1fr)); } .hs-water, .hs-air, .hs-chlorine { grid-column: auto; } }
@@ -466,7 +463,6 @@ a.mcard:hover { transform: translateY(-2px); text-decoration: none; color: var(-
   .hero h1 { font-size: clamp(3.6rem, 5.3vw, 6.5rem); }
   .hero-stage { position: absolute; inset: 0; display: block; max-width: none; margin: 0; padding: 0; pointer-events: none; }
   .hero-stage > * { position: absolute; pointer-events: auto; }
-  .hs-flag { left: 47%; top: calc(var(--nav-height) + 4%); }
   .hs-water { left: 47%; top: calc(var(--nav-height) + 9%); width: 15.5rem; }
   .hs-air { right: 3%; top: calc(var(--nav-height) + 6%); width: 15rem; }
   .hs-chlorine { right: 2.5%; top: 47%; width: 14.5rem; }
