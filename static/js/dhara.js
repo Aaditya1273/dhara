@@ -24,6 +24,14 @@
     busy(form, true);
     if (form.dataset.pending) announce(form.dataset.pending);
   });
+  /* Landing nav: transparent over the hero, floating pill once the page scrolls. */
+  var lpHeader = document.querySelector('.lp-header');
+  if (lpHeader) {
+    var floatNav = function () { lpHeader.classList.toggle('is-floating', window.scrollY > 8); };
+    window.addEventListener('scroll', floatNav, { passive: true });
+    floatNav();
+  }
+
   // Restore buttons if the page is shown again from the back/forward cache.
   window.addEventListener('pageshow', function () {
     document.querySelectorAll('form[data-sent]').forEach(function (f) { delete f.dataset.sent; busy(f, false); });

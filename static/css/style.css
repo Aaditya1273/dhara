@@ -378,6 +378,15 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
   background: rgb(255 255 255 / 78%); -webkit-backdrop-filter: saturate(160%) blur(16px); backdrop-filter: saturate(160%) blur(16px);
   border: 1px solid rgb(226 232 240 / 80%); box-shadow: var(--shadow-floating); }
 @media (max-width: 479px) { .lp-header { padding-top: 8px; } .lp-header .site-bar { padding-left: 14px; min-height: 54px; } }
+/* With JS, the bar starts transparent and full-width over the hero, and becomes the floating pill once the page scrolls.
+   Without JS it simply stays a pill, so it is always readable. */
+.lp-header, .lp-header .site-bar { transition: padding var(--motion-normal) var(--ease-brand), max-width var(--motion-normal) var(--ease-brand),
+  min-height var(--motion-normal) var(--ease-brand), background-color var(--motion-normal) var(--ease-brand),
+  border-color var(--motion-normal) var(--ease-brand), box-shadow var(--motion-normal) var(--ease-brand); }
+.js .lp-header:not(.is-floating) { padding-top: 0; }
+.js .lp-header:not(.is-floating) .site-bar { max-width: var(--content-max); min-height: var(--nav-height); padding-inline: 0;
+  background-color: transparent; border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.js .lp-header:not(.is-floating) .btn-ghost { --btn-bg: rgb(255 255 255 / 85%); }
 .lp-links { display: none; }
 @media (min-width: 1000px) { .lp-links { display: flex; gap: var(--s2); } }
 .site-nav .btn-sm { min-height: 38px; padding: 0 1rem; }
