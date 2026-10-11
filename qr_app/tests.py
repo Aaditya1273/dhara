@@ -1056,6 +1056,6 @@ class InterfaceTests(DharaTestCase):
         html = r.content.decode()
         self.assertNotIn('cdn.tailwindcss.com', html)
         self.assertNotIn('alpinejs', html)
-        for path in ('css/tw.css', 'css/style.css', 'js/dhara.js', 'fonts/manrope-var.woff2', 'fonts/instrument-serif-italic.woff2'):
+        for path in ('css/tw.css', 'css/style.css', 'js/dhara.js', 'fonts/inter-var.woff2'):
             from django.contrib.staticfiles import finders
             self.assertIsNotNone(finders.find(path), path)

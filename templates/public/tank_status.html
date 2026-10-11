@@ -2,27 +2,27 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="robots" content="noindex"><meta name="theme-color" content="#091d25">
+  <meta name="robots" content="noindex"><meta name="theme-color" content="#ffffff">
   <title>{{ tank.tank_code }} tank status · DHARA</title>
-  <link rel="preload" href="{% static 'fonts/manrope-var.woff2' %}" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="{% static 'fonts/inter-var.woff2' %}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{% static 'css/tw.css' %}">
   <link rel="stylesheet" href="{% static 'css/style.css' %}">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23091d25'/%3E%3Cpath d='M16 6c0 0-7 8-7 13a7 7 0 0 0 14 0c0-5-7-13-7-13z' fill='%23c9f27a'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230071e3'/%3E%3Cpath d='M16 6c0 0-7 8-7 13a7 7 0 0 0 14 0c0-5-7-13-7-13z' fill='%23ffffff'/%3E%3C/svg%3E">
 </head>
 <body>
 <main class="max-w-xl mx-auto" style="view-transition-name:main">
-  <header class="qr-hero on-dark">
+  <header class="qr-hero">
     <div class="flex items-center justify-between gap-3">
       <span class="brand">{% include 'partials/logo.html' %}<span class="brand-word">DHARA</span></span>
-      <span class="text-xs" style="color:#8fa6a6">Public tank status</span>
+      <span class="text-xs muted">Public tank status</span>
     </div>
-    <p class="context mt-6" style="color:#c9f27a">{{ tank.company.name }}</p>
+    <p class="context mt-6">{{ tank.company.name }}</p>
     <h1>{{ tank.name }}</h1>
-    <p class="mt-1" style="color:#b9cbc9"><span class="mono">{{ tank.tank_code }}</span>{% if tank.building %}, {{ tank.building }}{% endif %}</p>
+    <p class="mt-1 muted"><span class="mono">{{ tank.tank_code }}</span>{% if tank.building %}, {{ tank.building }}{% endif %}</p>
   </header>
 
   <div class="px-4 -mt-5 grid gap-4 pb-10">
-    <div class="disclaimer" role="note" style="background:#fff"><strong>Please read:</strong> DHARA displays recorded maintenance and water-quality documentation. A maintenance record or photograph alone does not certify that the water is safe to drink.</div>
+    <div class="disclaimer" role="note"><strong>Please read:</strong> DHARA displays recorded maintenance and water-quality documentation. A maintenance record or photograph alone does not certify that the water is safe to drink.</div>
 
     <section class="panel panel-pad lane" aria-labelledby="m-h">
       <span class="lane-tag">Maintenance</span>
