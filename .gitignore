@@ -1,20 +1,44 @@
+# --- Python / Django ---
 /.venv/
-.idea
 __pycache__/
-*.pyc
+*.py[cod]
 db.sqlite3
-/media/
+db.sqlite3-journal
 /staticfiles/
-.env
+/media/
 debug.log
-/demo_files/
-/.playwright-mcp/
+*.log
+
+# --- Environment and secrets (never commit) ---
+.env
+.env.*
+!.env.example
 firmware/**/secrets.h
+firmware/wokwi/*.local.ino
 deploy/aws/iot/*.pem
 deploy/aws/iot/*.crt
 deploy/aws/iot/*.key
-deploy/aws/iot/cert.arn
-node_modules/
 deploy/aws/iot/*.token
-deploy/aws/iot/*.pem
-firmware/wokwi/*.local.ino
+deploy/aws/iot/cert.arn
+
+# --- Node / front-end build ---
+node_modules/
+*.tsbuildinfo
+static/landing/*.map
+
+# --- Local working files ---
+/demo_files/
+/design/
+/.playwright-mcp/
+.claude/settings.local.json
+
+# --- Editors and OS ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Firmware builds ---
+.pio/
+build/
