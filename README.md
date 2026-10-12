@@ -224,6 +224,7 @@ Built on [QRInvent](LICENSE) (MIT, © 2026 RSLV; the first commit is the unmodif
 ## AI tools used
 Claude Code (Anthropic) wrote most of the code, tests, documentation and the demo video under the team's direction and review.
 
-## Team
-- [@Aaditya1273](https://github.com/Aaditya1273)
-- [@utkarsh684](https://github.com/utkarsh684)
+## Team & Contributions
+- **[@Aaditya1273](https://github.com/Aaditya1273)** — System architecture, AWS IoT Core & cloud deployment, thermal twin modeling, demo video production
+- **[@utkarsh684](https://github.com/utkarsh684)** — Full-stack development, sensor ingestion workflow, testing & verification, documentation & repo maintenance
+
